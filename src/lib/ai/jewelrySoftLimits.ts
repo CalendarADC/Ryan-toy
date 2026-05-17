@@ -3,6 +3,8 @@
  * Gemini / 老张图接口无独立 negative prompt 字段，负面约束以英文段落形式写入正文。
  */
 
+import { buildRingWomensOnModelStyleAdaptiveBlock } from "@/lib/step2/ringWomensOnModelStyle";
+
 export type JewelryProductKind = "ring" | "pendant";
 export type PromptExpansionStrength = "standard" | "strong";
 export type PendantRearTopologyClass = "relief_3d" | "plate_back";
@@ -413,18 +415,13 @@ export function userWantsWomensRingOnModelPresentation(prompt: string): boolean 
 }
 
 /**
- * 戒指 on-model：女性向参考 — 完整手部、欧美手型主参考、优雅大气背景（英文进 img2img）。
+ * 戒指 on-model：女性向 — 由 AI 根据 SKU + brief 自由发挥穿戴场景（见 ringWomensOnModelStyle）。
  */
-export function buildRingWomensOnModelLuxuryPresentationBlock(): string {
-  return [
-    "WOMEN'S-RING ON-MODEL — LUXURY EDITORIAL REFERENCE (strict): treat the user's brief as a ring suitable for women / elegant wear; match premium e-commerce + high-jewelry campaign quality.",
-    "HAND & MODEL READ (strict): show a **natural adult woman's hand** with **European / North American** proportions and skin tone (fair to light-medium) as the **primary default** hand type — believable knuckles, relaxed tendons, realistic skin micro-texture (NOT plastic).",
-    "FULL-HAND FRAMING (strict): **most or all fingers visible** plus the back of the hand in a relaxed diagonal or gentle 3/4 pose; the ring finger (or chosen allowed finger) must read clearly but **NOT** as an isolated single-finger macro — preserve **full-hand wearing context** like a luxury catalog on-model shot.",
-    "POSE: fingers softly curved, calm elegant gesture; ring centered and readable on the chosen finger.",
-    "MANICURE: **medium almond** nails, glossy **neutral nude / beige** polish — sophisticated, not distracting.",
-    "BACKGROUND & ATMOSPHERE (strict): **elegant, upscale, quiet-luxury** — soft **shallow bokeh** in warm **beige / tan / champagne** neutrals (suggest fine fabric or refined interior blur), **no clutter**, no busy props, no loud colors.",
-    "LIGHTING: **soft diffused studio / editorial** wrap light with gentle speculars on metal and stone; forbid harsh flat flash, cheap snapshot glare, or muddy gray flatness.",
-  ].join("\n");
+export function buildRingWomensOnModelLuxuryPresentationBlock(
+  prompt = "",
+  varietySeed = ""
+): string {
+  return buildRingWomensOnModelStyleAdaptiveBlock(prompt, varietySeed);
 }
 
 /** Step1：细戒/通勤/女性向时约束主题体量与戒臂融合，避免头重脚轻、造型夸张 */

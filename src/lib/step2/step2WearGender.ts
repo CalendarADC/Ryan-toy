@@ -41,8 +41,8 @@ export function buildWearGenderPresentationBlock(
   return [
     "USER SELECTED WEARER: **Adult female** (strict). Output must read as a woman wearing the jewelry — natural female hand/neck proportions.",
     kind === "ring"
-      ? "Female hand wearing the ring; elegant believable scale; may use refined manicure consistent with luxury catalog."
-      : "Female neck / upper torso wearing the pendant; chain drapes naturally; refined on-model necklace presentation.",
+      ? "Female hand wearing the ring; elegant believable scale. **You choose** manicure, skin tone, and background to best suit this SKU + user brief (full creative freedom) — do NOT repeat one fixed stock hand template every time."
+      : "Female neck / upper torso wearing the pendant; chain drapes naturally; refined on-model necklace presentation; styling may vary with SKU mood.",
     strategy,
   ].join("\n");
 }

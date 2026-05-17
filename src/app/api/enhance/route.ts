@@ -394,11 +394,13 @@ export async function POST(req: Request) {
               baseKeepInstructionOnModel,
               ...(wearGender ? [buildWearGenderPresentationBlock(wearGender, kind)] : []),
               "Generate an on-model shot where the ring is worn on a human hand in a studio product photography style.",
-              ...(useFemaleRingPresentation ? [buildRingWomensOnModelLuxuryPresentationBlock()] : []),
+              ...(useFemaleRingPresentation
+                ? [buildRingWomensOnModelLuxuryPresentationBlock(prompt, runNonce)]
+                : []),
               ...(useMaleRingPresentation ? [buildRingMensOnModelPresentationBlock()] : []),
               "FRAMING (strict): do NOT do an extreme close-up of a single finger segment. Show a fuller hand-worn context (at least most of the hand, ideally full hand in frame) so wearing scale looks realistic and natural.",
               "Composition preference: 3/4 hand view or palm-down full-hand showcase with the ring clearly readable; keep natural anatomy and believable perspective.",
-              "Use a clean, Etsy-friendly background. Natural lighting, sharp focus, realistic reflections.",
+              "Let the model freely art-direct background and manicure per the creative-freedom block above; avoid repeating one identical stock hand + beige nails + champagne fabric on every SKU. Natural lighting, sharp focus, realistic reflections.",
               "FINGER PLACEMENT (strict): wear the ring on **index**, **middle**, or **ring finger** only ? strongly prefer **index or middle** (?? / ??); rotate between index vs middle across generations. **FORBID pinky finger (??)** ? never place the ring on the little finger. Natural knuckle spacing and anatomy.",
               "Avoid adding extra rings, avoid changing the gemstone, keep the ring centered and clearly visible.",
               step3UserTextSecondaryBlock(prompt),
