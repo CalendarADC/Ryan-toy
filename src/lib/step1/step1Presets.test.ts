@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDicePrompt,
   findElementPoolSearchMatches,
+  resolveElementIndexForMatch,
   formatElementPool,
   mergeImportedStep1Presets,
   normalizeElementPoolToken,
@@ -62,6 +63,7 @@ describe("normalizeStep1Preset", () => {
       updatedAt: "",
     });
     expect(preset?.materials).toEqual(["brass"]);
+    expect(preset?.ringSizeAdaptations).toEqual(["thick_male", "thin_female", "medium_unisex"]);
   });
 });
 
@@ -72,6 +74,7 @@ const samplePreset = (): Step1Preset => ({
   styleIds: ["gothic"],
   designObject: "ring",
   materials: ["s925"],
+  ringSizeAdaptations: ["thin_female"],
   diceStrength: "single_element_single_style",
   createdAt: "",
   updatedAt: "",
@@ -91,6 +94,18 @@ describe("findElementPoolSearchMatches", () => {
     const elements = parseElementPoolInput(raw);
     const matches = findElementPoolSearchMatches(raw, elements, "c,d");
     expect(matches).toEqual([{ start: 2, end: 5 }]);
+  });
+});
+
+describe("resolveElementIndexForMatch", () => {
+  it("maps match span to element index", () => {
+    const raw = "紫藤+荷,银杏+荷,小鸟";
+    const elements = parseElementPoolInput(raw);
+    const matches = findElementPoolSearchMatches(raw, elements, "荷");
+    expect(matches.length).toBeGreaterThan(0);
+    const idx = resolveElementIndexForMatch(raw, elements, matches[0]!);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(elements[idx]).toContain("荷");
   });
 });
 
@@ -122,5 +137,28 @@ describe("buildDicePrompt", () => {
     const prompt = buildDicePrompt(preset);
     expect(prompt).toContain("以天使翅+天体+卢恩符文作为设计主题");
     expect(prompt).not.toMatch(/以天使翅和天体/);
+  });
+
+  it("inserts ring size adaptation between object clause and theme clause", () => {
+    const preset: Step1Preset = {
+      ...samplePreset(),
+      designObject: "ring",
+      ringSizeAdaptations: ["thin_female"],
+      elements: ["紫藤"],
+      styleIds: ["rococo"],
+    };
+    const prompt = buildDicePrompt(preset);
+    expect(prompt).toMatch(/设计一个.+的戒指，细戒指适合女性日常佩戴，以紫藤作为设计主题/);
+  });
+
+  it("omits ring size clause for pendant presets", () => {
+    const preset: Step1Preset = {
+      ...samplePreset(),
+      designObject: "pendant",
+      ringSizeAdaptations: ["thick_male"],
+    };
+    const prompt = buildDicePrompt(preset);
+    expect(prompt).not.toContain("粗戒指");
+    expect(prompt).toContain("吊坠");
   });
 });

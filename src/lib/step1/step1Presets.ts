@@ -9,6 +9,9 @@ export type Step1DiceStrength =
 export type Step1DesignObject = "pendant" | "ring";
 export type Step1Material = "s925" | "brass" | "rose_gold";
 
+/** 戒指尺寸/佩戴适配：骰子随机一条，插入材质句与主题句之间 */
+export type Step1RingSizeAdaptation = "thick_male" | "thin_female" | "medium_unisex";
+
 export type Step1Preset = {
   id: string;
   name: string;
@@ -17,6 +20,8 @@ export type Step1Preset = {
   designObject: Step1DesignObject;
   /** 材质池：骰子每次从中随机抽取一种 */
   materials: Step1Material[];
+  /** 戒指尺寸适配池（仅 designObject=ring 时写入提示词） */
+  ringSizeAdaptations: Step1RingSizeAdaptation[];
   diceStrength: Step1DiceStrength;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +39,12 @@ export const MATERIAL_OPTIONS: { id: Step1Material; label: string }[] = [
   { id: "s925", label: "S925银" },
   { id: "brass", label: "黄铜" },
   { id: "rose_gold", label: "玫瑰金" },
+];
+
+export const RING_SIZE_ADAPTATION_OPTIONS: { id: Step1RingSizeAdaptation; label: string }[] = [
+  { id: "thick_male", label: "粗戒指仅适合男性佩戴" },
+  { id: "thin_female", label: "细戒指适合女性日常佩戴" },
+  { id: "medium_unisex", label: "中细戒指男女均可佩戴" },
 ];
 
 export const DICE_STRENGTH_OPTIONS: { id: Step1DiceStrength; label: string }[] = [
@@ -56,7 +67,23 @@ export function materialsLabel(ids: Step1Material[]): string {
   return unique.map(materialLabel).join("、") || "—";
 }
 
+export function ringSizeAdaptationLabel(id: Step1RingSizeAdaptation): string {
+  return RING_SIZE_ADAPTATION_OPTIONS.find((o) => o.id === id)?.label ?? id;
+}
+
+export function ringSizeAdaptationsLabel(ids: Step1RingSizeAdaptation[]): string {
+  const unique = [...new Set(ids)];
+  return unique.map(ringSizeAdaptationLabel).join("、") || "—";
+}
+
 const VALID_MATERIALS = new Set<Step1Material>(MATERIAL_OPTIONS.map((o) => o.id));
+const VALID_RING_SIZE_ADAPTATIONS = new Set<Step1RingSizeAdaptation>(
+  RING_SIZE_ADAPTATION_OPTIONS.map((o) => o.id)
+);
+
+const DEFAULT_RING_SIZE_ADAPTATIONS: Step1RingSizeAdaptation[] = RING_SIZE_ADAPTATION_OPTIONS.map(
+  (o) => o.id
+);
 
 function parseMaterialsFromStored(raw: unknown): Step1Material[] {
   if (Array.isArray(raw)) {
@@ -67,6 +94,17 @@ function parseMaterialsFromStored(raw: unknown): Step1Material[] {
     return [raw as Step1Material];
   }
   return ["s925"];
+}
+
+function parseRingSizeAdaptationsFromStored(raw: unknown): Step1RingSizeAdaptation[] {
+  if (Array.isArray(raw)) {
+    const ids = raw.filter(
+      (id): id is Step1RingSizeAdaptation =>
+        typeof id === "string" && VALID_RING_SIZE_ADAPTATIONS.has(id as Step1RingSizeAdaptation)
+    );
+    if (ids.length) return [...new Set(ids)];
+  }
+  return [...DEFAULT_RING_SIZE_ADAPTATIONS];
 }
 
 /** 兼容旧版仅存 `material` 单字段的预设数据 */
@@ -87,6 +125,7 @@ export function normalizeStep1Preset(raw: unknown): Step1Preset | null {
   }
   const materials =
     o.materials !== undefined ? parseMaterialsFromStored(o.materials) : parseMaterialsFromStored(o.material);
+  const ringSizeAdaptations = parseRingSizeAdaptationsFromStored(o.ringSizeAdaptations);
   return {
     id: o.id,
     name: o.name,
@@ -94,6 +133,7 @@ export function normalizeStep1Preset(raw: unknown): Step1Preset | null {
     styleIds: o.styleIds.filter((s): s is string => typeof s === "string"),
     designObject: o.designObject,
     materials,
+    ringSizeAdaptations,
     diceStrength,
     createdAt: typeof o.createdAt === "string" ? o.createdAt : "",
     updatedAt: typeof o.updatedAt === "string" ? o.updatedAt : "",
@@ -170,6 +210,20 @@ export function findElementPoolSearchMatches(
   return deduped;
 }
 
+/** 将原文中的匹配区间对应到「已识别元素」列表下标（用于标签高亮与滚动）。 */
+export function resolveElementIndexForMatch(
+  raw: string,
+  elements: string[],
+  span: ElementPoolTextSpan
+): number {
+  const slice = raw.slice(span.start, span.end);
+  const exact = elements.findIndex((el) => el === slice);
+  if (exact >= 0) return exact;
+  const containing = elements.findIndex((el) => el.includes(slice) || slice.includes(el));
+  if (containing >= 0) return containing;
+  return elements.findIndex((el) => raw.slice(span.start, span.end) === el);
+}
+
 function pickRandomUnique<T>(pool: T[], count: number): T[] {
   if (!pool.length || count <= 0) return [];
   const n = Math.min(count, pool.length);
@@ -208,7 +262,16 @@ export function buildDicePrompt(preset: Step1Preset): string {
   const theme = pickedElements.join("和");
   const styles = pickedStyles.join("和");
 
-  return `设计一个${mat}的${obj}，以${theme}作为设计主题，以${styles}作为设计风格`;
+  let ringSizeClause = "";
+  if (preset.designObject === "ring" && preset.ringSizeAdaptations.length > 0) {
+    const pickedSize =
+      pickRandomUnique(preset.ringSizeAdaptations, 1)[0] ?? preset.ringSizeAdaptations[0];
+    if (pickedSize) {
+      ringSizeClause = `${ringSizeAdaptationLabel(pickedSize)}，`;
+    }
+  }
+
+  return `设计一个${mat}的${obj}，${ringSizeClause}以${theme}作为设计主题，以${styles}作为设计风格`;
 }
 
 export function loadStep1Presets(): Step1Preset[] {

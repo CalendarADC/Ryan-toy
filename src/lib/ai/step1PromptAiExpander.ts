@@ -84,6 +84,45 @@ function parseExpandErrorDetail(text: string): string {
 /**
  * 供 generate-main 等在回退提示中区分「上游过载」与「配置问题」。
  */
+export function step1ExpandDesignObjectZh(kind: JewelryProductKind): string {
+  return kind === "ring" ? "戒指" : "吊坠";
+}
+
+/** 扩写结果中「展示背景」固定句（XXX = 戒指 / 吊坠） */
+export function buildStep1ExpandDisplayBackgroundClause(kind: JewelryProductKind): string {
+  const obj = step1ExpandDesignObjectZh(kind);
+  return `根据设计，把${obj}放到你认为合适的展示背景里`;
+}
+
+/**
+ * 将 AI 扩写里随机生成的布景/台面描述替换为固定展示背景句。
+ * 输出保留「展示背景：」标签，便于与生图流程对齐。
+ */
+export function normalizeStep1ExpandedPromptDisplayBackground(
+  expanded: string,
+  kind: JewelryProductKind
+): string {
+  const clause = buildStep1ExpandDisplayBackgroundClause(kind);
+  const fixedLine = `展示背景：${clause}`;
+
+  let text = expanded.trim();
+  if (!text) return fixedLine;
+
+  text = text.replace(/展示背景[：:]\s*[^\n]+/g, "");
+  text = text.replace(/(?:拍摄|陈列|布景|场景)(?:背景|环境)?[：:]\s*[^\n]+/g, "");
+  text = text.replace(/\n{3,}/g, "\n\n").trim();
+
+  if (text.includes(clause)) {
+    if (!text.includes(fixedLine)) {
+      text = text.replace(clause, fixedLine.replace(/^展示背景：/, ""));
+    }
+    return text.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  const sep = /[。！？.!?]\s*$/.test(text) ? "\n" : "。\n";
+  return `${text}${sep}${fixedLine}`.trim();
+}
+
 export function step1ExpandFailureUserHint(detail: string): string {
   const d = detail.toLowerCase();
   if (d.includes("1040") || d.includes("too many connections")) {
@@ -126,6 +165,12 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "扩写正文必须只描述「一件」实体珠宝、「一张」主图画面；禁止一图多件、排戒展示、对比组图、系列陈列等。",
     "若用户列举多种动物或元素：视为同一枚首饰的设计灵感来源，或择一主元素统一呈现，不得要求画面出现多枚戒指/多件主体。",
     "戒指可佩戴性：戒圈与手指接触区域下方禁止向下凸出的尖刺、爪钩、悬挂结构等硌手造型，内侧尽量平顺可戴。",
+    "",
+    "=== 展示背景（硬性，唯一允许写法）===",
+    `品类为戒指时展示背景句必须为：展示背景：根据设计，把戒指放到你认为合适的展示背景里`,
+    `品类为吊坠时展示背景句必须为：展示背景：根据设计，把吊坠放到你认为合适的展示背景里`,
+    "禁止描写具体台面/布景/环境（如丝绒、橡木、大理石、灰白无缝棚拍、深色木桌、柔光箱场景等）；禁止随机发明背景；把背景决策交给后续生图模型。",
+    "扩写正文其它部分可写材质、工艺、造型与光影，但「展示背景」一行只能使用上述固定句。",
     "",
     "OUTPUT FORMAT: 只输出最终扩写后的中文提示词纯文本；禁止 JSON、Markdown、解释性前后缀。",
   ].join("\n");
@@ -184,7 +229,10 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
         content = text.trim();
       }
       if (!content) throw new Error("Step1 AI 改写返回为空。");
-      return { expandedPrompt: content, model };
+      return {
+        expandedPrompt: normalizeStep1ExpandedPromptDisplayBackground(content, args.kind),
+        model,
+      };
     }
 
     const detail = parseExpandErrorDetail(text);

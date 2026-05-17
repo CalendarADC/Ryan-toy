@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useJewelryGeneratorStore } from "@/store/jewelryGeneratorStore";
 import Step1FlipClock from "./Step1FlipClock";
 import Step1GenerateButton from "./Step1GenerateButton";
@@ -14,6 +13,7 @@ import { emitToast } from "@/lib/ui/toast";
 import { withDesktopLocalHeader } from "@/lib/runtime/desktopLocalMode";
 import { STEP1_STYLE_OPTIONS } from "@/lib/step1/step1StyleOptions";
 import BrandButton from "./BrandButton";
+import Step1StyleMenuOption from "./Step1StyleMenuOption";
 import {
   buildDicePrompt,
   createPresetId,
@@ -55,66 +55,6 @@ const STEP1_STYLE_MENU_PANEL =
   "absolute left-0 top-full z-[35] mt-1.5 overflow-visible rounded-xl border border-[rgba(94,111,130,0.18)] bg-[var(--create-surface-paper)] shadow-lg";
 
 const MAX_STYLE_SELECTIONS = 3;
-
-function Step1StyleMenuOption({
-  style,
-  selected,
-  onToggle,
-}: {
-  style: (typeof STEP1_STYLE_OPTIONS)[number];
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
-
-  const showTooltip = () => {
-    const rect = btnRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const centerX = rect.left + rect.width / 2;
-    const pad = 12;
-    const half = Math.min(170, (window.innerWidth - pad * 2) / 2);
-    const left = Math.min(Math.max(centerX, pad + half), window.innerWidth - pad - half);
-    setTooltipPos({ top: rect.bottom + 6, left });
-    setHovered(true);
-  };
-
-  return (
-    <div className="relative">
-      <button
-        ref={btnRef}
-        type="button"
-        role="option"
-        aria-selected={selected}
-        className={`flex w-full items-center justify-between rounded-xl border border-transparent bg-white px-3 py-2 text-left text-sm shadow-sm transition-all duration-200 ease-out hover:-translate-y-1.5 hover:scale-[1.02] hover:shadow-lg ${
-          selected ? "border-amber-300 bg-amber-50 font-semibold text-amber-900" : "text-[#363028]"
-        }`}
-        onClick={onToggle}
-        onMouseEnter={showTooltip}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={showTooltip}
-        onBlur={() => setHovered(false)}
-      >
-        <span>{style.label}</span>
-        <span className="text-[11px] opacity-60">{style.labelEn}</span>
-        {selected ? <span className="text-amber-700">{"\u2713"}</span> : null}
-      </button>
-      {hovered && tooltipPos
-        ? createPortal(
-            <div
-              className="pointer-events-none fixed z-[200] w-[min(340px,calc(100vw-24px))] -translate-x-1/2 whitespace-normal rounded-xl bg-white p-3 text-xs text-gray-700 shadow-xl ring-1 ring-gray-200"
-              style={{ top: tooltipPos.top, left: tooltipPos.left }}
-              role="tooltip"
-            >
-              <p className="text-[11px] leading-relaxed text-gray-600">{style.desc}</p>
-            </div>,
-            document.body
-          )
-        : null}
-    </div>
-  );
-}
 
 /** 风格选择器：`public/icons/step1-style-wand.png` */
 function IconStyleHat({ className }: { className?: string }) {
@@ -573,6 +513,7 @@ export default function Step1Input() {
               styleIds: payload.styleIds,
               designObject: payload.designObject,
               materials: payload.materials,
+              ringSizeAdaptations: payload.ringSizeAdaptations,
               diceStrength: payload.diceStrength,
               updatedAt: now,
             }
@@ -589,6 +530,7 @@ export default function Step1Input() {
       styleIds: payload.styleIds,
       designObject: payload.designObject,
       materials: payload.materials,
+      ringSizeAdaptations: payload.ringSizeAdaptations,
       diceStrength: payload.diceStrength,
       createdAt: now,
       updatedAt: now,

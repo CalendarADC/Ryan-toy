@@ -1,17 +1,21 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import BrandButton from "./BrandButton";
+import Step1ElementPoolEditor from "./Step1ElementPoolEditor";
+import Step1StyleMenuOption from "./Step1StyleMenuOption";
 import {
   DICE_STRENGTH_OPTIONS,
   DESIGN_OBJECT_OPTIONS,
   MATERIAL_OPTIONS,
+  RING_SIZE_ADAPTATION_OPTIONS,
+  ringSizeAdaptationsLabel,
   type Step1DiceStrength,
   type Step1DesignObject,
   type Step1Material,
   type Step1Preset,
-  findElementPoolSearchMatches,
+  type Step1RingSizeAdaptation,
   formatElementPool,
   parseElementPoolInput,
 } from "@/lib/step1/step1Presets";
@@ -24,6 +28,7 @@ export type Step1PresetWizardSavePayload = {
   styleIds: string[];
   designObject: Step1DesignObject;
   materials: Step1Material[];
+  ringSizeAdaptations: Step1RingSizeAdaptation[];
   diceStrength: Step1DiceStrength;
 };
 
@@ -35,7 +40,7 @@ export type Step1PresetWizardProps = {
   onSave: (payload: Step1PresetWizardSavePayload) => void;
 };
 
-const WIZARD_STEPS = ["元素池", "风格", "设计对象", "材质", "骰子强度", "确认"] as const;
+const WIZARD_STEPS = ["元素池", "风格", "设计对象", "材质", "戒指尺寸适配", "骰子强度", "确认"] as const;
 
 export default function Step1PresetWizard({ open, mode, initial, onClose, onSave }: Step1PresetWizardProps) {
   const [step, setStep] = useState(0);
@@ -44,6 +49,11 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
   const [styleIds, setStyleIds] = useState<string[]>([]);
   const [designObject, setDesignObject] = useState<Step1DesignObject>("ring");
   const [materials, setMaterials] = useState<Step1Material[]>(["s925"]);
+  const [ringSizeAdaptations, setRingSizeAdaptations] = useState<Step1RingSizeAdaptation[]>([
+    "thick_male",
+    "thin_female",
+    "medium_unisex",
+  ]);
   const [diceStrength, setDiceStrength] = useState<Step1DiceStrength>("single_element_single_style");
 
   useEffect(() => {
@@ -54,12 +64,18 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
       setStyleIds([...initial.styleIds]);
       setDesignObject(initial.designObject);
       setMaterials(initial.materials.length ? [...initial.materials] : ["s925"]);
+      setRingSizeAdaptations(
+        initial.ringSizeAdaptations.length
+          ? [...initial.ringSizeAdaptations]
+          : ["thick_male", "thin_female", "medium_unisex"]
+      );
       setDiceStrength(initial.diceStrength);
     } else {
       setElementRaw("");
       setStyleIds([]);
       setDesignObject("ring");
       setMaterials(["s925"]);
+      setRingSizeAdaptations(["thick_male", "thin_female", "medium_unisex"]);
       setDiceStrength("single_element_single_style");
     }
   }, [open, initial]);
@@ -80,9 +96,11 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
           .map((id) => MATERIAL_OPTIONS.find((o) => o.id === id)?.label)
           .filter(Boolean)
           .join("、") || "—",
+      ringSize:
+        designObject === "ring" ? ringSizeAdaptationsLabel(ringSizeAdaptations) : "（吊坠无需配置）",
       dice: DICE_STRENGTH_OPTIONS.find((o) => o.id === diceStrength)?.label ?? "—",
     };
-  }, [elements, styleIds, designObject, materials, diceStrength]);
+  }, [elements, styleIds, designObject, materials, ringSizeAdaptations, diceStrength]);
 
   if (!open) return null;
 
@@ -90,6 +108,7 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
     if (step === 0) return elements.length > 0;
     if (step === 1) return styleIds.length > 0;
     if (step === 3) return materials.length > 0;
+    if (step === 4) return designObject === "pendant" || ringSizeAdaptations.length > 0;
     return true;
   };
 
@@ -102,6 +121,7 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
       styleIds,
       designObject,
       materials,
+      ringSizeAdaptations,
       diceStrength,
     });
     onClose();
@@ -113,6 +133,12 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
 
   const toggleMaterial = (id: Step1Material) => {
     setMaterials((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleRingSizeAdaptation = (id: Step1RingSizeAdaptation) => {
+    setRingSizeAdaptations((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   return (
@@ -128,13 +154,6 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
           <h2 id="preset-wizard-title" className="shrink-0 text-base font-semibold text-gray-900">
             {mode === "edit" ? "修改预设" : "新建预设"}
           </h2>
-          {step === 0 ? (
-            <ElementPoolSearchBar
-              elementRaw={elementRaw}
-              elements={elements}
-              textareaRef={elementTextareaRef}
-            />
-          ) : null}
         </div>
 
         <div className="mb-4 flex flex-wrap gap-1">
@@ -156,37 +175,25 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
             <p className="text-sm text-gray-600">
               多个独立元素用逗号分隔；同一组合主题内的子元素用 + 连接（仍算 1 个元素）。
             </p>
-            <textarea
-              ref={elementTextareaRef}
-              className="min-h-[120px] w-full rounded-xl border border-[rgba(94,111,130,0.2)] p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-              value={elementRaw}
-              onChange={(e) => setElementRaw(e.target.value)}
-              placeholder="天使翅+天体+卢恩符文,小鸟,小鸡"
+            <Step1ElementPoolEditor
+              elementRaw={elementRaw}
+              setElementRaw={setElementRaw}
+              elements={elements}
+              textareaRef={elementTextareaRef}
             />
-            {elements.length > 0 ? (
-              <p className="text-xs text-gray-500">已识别 {elements.length} 个元素：{elements.join("、")}</p>
-            ) : null}
           </div>
         ) : null}
 
         {step === 1 ? (
-          <div className="grid max-h-[280px] grid-cols-2 gap-1 overflow-y-auto rounded-xl border border-[rgba(94,111,130,0.12)] p-2">
-            {STEP1_STYLE_OPTIONS.map((style, index) => (
-              <div key={style.id} className="group relative" style={{ zIndex: 50 - index }}>
-                <button
-                  type="button"
-                  className={`flex w-full items-center justify-between rounded-xl border px-2 py-2 text-left text-xs transition-all duration-200 ease-out group-hover:-translate-y-1 group-hover:scale-[1.02] group-hover:shadow-md ${
-                    styleIds.includes(style.id)
-                      ? "border-amber-300 bg-amber-50 font-semibold text-amber-900"
-                      : "border-transparent bg-white text-[#363028]"
-                  }`}
-                  onClick={() => toggleStyle(style.id)}
-                >
-                  <span>{style.label}</span>
-                  {styleIds.includes(style.id) ? <span className="text-amber-700">✓</span> : null}
-                </button>
-                <StyleDescTooltip desc={style.desc} />
-              </div>
+          <div className="grid max-h-[280px] grid-cols-2 gap-1 overflow-y-auto overflow-x-visible rounded-xl border border-[rgba(94,111,130,0.12)] p-2">
+            {STEP1_STYLE_OPTIONS.map((style) => (
+              <Step1StyleMenuOption
+                key={style.id}
+                style={style}
+                selected={styleIds.includes(style.id)}
+                onToggle={() => toggleStyle(style.id)}
+                compact
+              />
             ))}
           </div>
         ) : null}
@@ -227,6 +234,45 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
         ) : null}
 
         {step === 4 ? (
+          <div>
+            {designObject === "pendant" ? (
+              <p className="text-sm text-gray-600">
+                当前设计对象为吊坠/项链，无需配置戒指尺寸适配，可直接下一步。
+              </p>
+            ) : (
+              <>
+                <p className="mb-2 text-sm text-gray-600">
+                  可多选；骰子每次随机抽取一条，写入「设计一个…的戒指」与「以…为设计主题」之间。
+                </p>
+                <div className="flex flex-col gap-2">
+                  {RING_SIZE_ADAPTATION_OPTIONS.map((opt, index) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={[
+                        "rounded-xl border px-4 py-3 text-left text-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md",
+                        ringSizeAdaptations.includes(opt.id)
+                          ? "border-amber-300 bg-amber-50 font-semibold text-amber-900"
+                          : "border-[rgba(94,111,130,0.15)] bg-white text-[#363028]",
+                      ].join(" ")}
+                      style={{ zIndex: 20 - index }}
+                      onClick={() => toggleRingSizeAdaptation(opt.id)}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        {opt.label}
+                        {ringSizeAdaptations.includes(opt.id) ? (
+                          <span className="text-amber-700">✓</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {step === 5 ? (
           <OptionGrid
             options={DICE_STRENGTH_OPTIONS}
             selected={diceStrength}
@@ -234,7 +280,7 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
           />
         ) : null}
 
-        {step === 5 ? (
+        {step === 6 ? (
           <div className="space-y-2 rounded-xl bg-[#f8f9fa] p-4 text-sm text-gray-700">
             <p>
               <span className="font-medium">元素池：</span>
@@ -251,6 +297,10 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
             <p>
               <span className="font-medium">材质：</span>
               {summary.mat}
+            </p>
+            <p>
+              <span className="font-medium">戒指尺寸适配：</span>
+              {summary.ringSize}
             </p>
             <p>
               <span className="font-medium">骰子强度：</span>
@@ -307,129 +357,10 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
   );
 }
 
-function ElementPoolSearchBar({
-  elementRaw,
-  elements,
-  textareaRef,
-}: {
-  elementRaw: string;
-  elements: string[];
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-}) {
-  const [query, setQuery] = useState("");
-  const [matchIndex, setMatchIndex] = useState(0);
-
-  const matches = useMemo(
-    () => findElementPoolSearchMatches(elementRaw, elements, query),
-    [elementRaw, elements, query],
-  );
-
-  useEffect(() => {
-    setMatchIndex(0);
-  }, [query, elementRaw]);
-
-  const focusMatchAt = useCallback(
-    (index: number) => {
-      const span = matches[index];
-      const ta = textareaRef.current;
-      if (!span || !ta) return;
-      ta.focus();
-      ta.setSelectionRange(span.start, span.end);
-      const lineHeight = parseInt(getComputedStyle(ta).lineHeight, 10) || 20;
-      const before = elementRaw.slice(0, span.start);
-      const line = (before.match(/\n/g) ?? []).length;
-      ta.scrollTop = Math.max(0, line * lineHeight - ta.clientHeight / 3);
-    },
-    [matches, textareaRef, elementRaw],
-  );
-
-  const goToMatch = useCallback(
-    (index: number) => {
-      if (!matches.length) return;
-      const next = ((index % matches.length) + matches.length) % matches.length;
-      setMatchIndex(next);
-      focusMatchAt(next);
-    },
-    [matches, focusMatchAt],
-  );
-
-  const onSearch = () => {
-    if (!matches.length) return;
-    goToMatch(0);
-  };
-
-  const onNext = () => {
-    if (!matches.length) return;
-    goToMatch(matchIndex + 1);
-  };
-
-  const hasQuery = query.trim().length > 0;
-  const statusText = !hasQuery
-    ? ""
-    : matches.length === 0
-      ? "无匹配"
-      : `${Math.min(matchIndex + 1, matches.length)}/${matches.length}`;
-
-  return (
-    <div className="flex min-w-0 max-w-[min(100%,240px)] flex-col items-end gap-1">
-      <div className="flex w-full items-center gap-1">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (e.shiftKey) onNext();
-              else onSearch();
-            }
-          }}
-          placeholder="搜索元素"
-          aria-label="在元素池中搜索元素"
-          className="min-w-0 flex-1 rounded-lg border border-[rgba(94,111,130,0.25)] px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-        />
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={matches.length === 0}
-          title={
-            matches.length === 0
-              ? "无匹配结果"
-              : matches.length === 1
-                ? "仅一处匹配"
-                : "跳转到下一处（Enter 定位首条，Shift+Enter 下一个）"
-          }
-          className="shrink-0 rounded-lg border border-[rgba(94,111,130,0.2)] bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          下一个
-        </button>
-      </div>
-      {hasQuery ? (
-        <span
-          className={[
-            "text-[10px]",
-            matches.length === 0 ? "text-red-600" : "text-gray-500",
-          ].join(" ")}
-        >
-          {statusText}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 function PresetWizardOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       {children}
-    </div>
-  );
-}
-
-function StyleDescTooltip({ desc }: { desc: string }) {
-  return (
-    <div className="pointer-events-none absolute -bottom-2 left-1/2 z-[90] hidden w-[280px] -translate-x-1/2 translate-y-full whitespace-normal rounded-xl bg-white p-2 text-[10px] leading-relaxed text-gray-600 shadow-xl ring-1 ring-gray-200 group-hover:block">
-      {desc}
     </div>
   );
 }
