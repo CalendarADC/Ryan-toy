@@ -34,23 +34,11 @@ export default function DesktopRuntimeBanner() {
   const mediaWarn = info.localImageStorageEnabled && !info.localMediaConfigured;
   const degradedDb =
     info.dbMode !== "off" && info.databaseReachable === false;
-  const offlineDesktop = info.dbMode === "off";
-
-  if (!offlineDesktop && !degradedDb && !mediaWarn) return null;
+  if (!degradedDb && !mediaWarn) return null;
 
   return (
     <div className="mb-4 flex flex-col gap-2">
-      {offlineDesktop ? (
-        <div
-          role="status"
-          className="rounded-lg border border-slate-300/80 bg-slate-50 px-4 py-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100"
-        >
-          <p className="leading-relaxed">
-            本地版为单机模式：任务与草稿保存在本机 IndexedDB，生图文件保存在本机目录；不连接远程数据库。仅在使用老张等
-            AI 生图/扩写时需要互联网。
-          </p>
-        </div>
-      ) : degradedDb ? (
+      {degradedDb ? (
         <div
           role="status"
           className="rounded-lg border border-amber-500/35 bg-amber-500/[0.12] px-4 py-3 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-50"
