@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from "electron";
 import { config as loadDotenvFile } from "dotenv";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -288,6 +288,21 @@ async function waitForBundledNextReady(timeoutMs = 120_000): Promise<boolean> {
   return false;
 }
 
+function registerDesktopIpcHandlers() {
+  ipcMain.handle("clipboard:write-image-png", (_event, base64: unknown) => {
+    if (typeof base64 !== "string" || !base64) return false;
+    try {
+      const buf = Buffer.from(base64, "base64");
+      const img = nativeImage.createFromBuffer(buf);
+      if (img.isEmpty()) return false;
+      clipboard.writeImage(img);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function createWindow() {
   const preloadPath = join(__dirname, "preload.js");
   const deviceInfo = buildDeviceInfo();
@@ -337,6 +352,7 @@ function createWindow() {
 }
 
 void app.whenReady().then(async () => {
+  registerDesktopIpcHandlers();
   loadPackagedDesktopEnv();
   applyDesktopRuntimeDefaults();
   ensureGemmuseLocalMediaDir();

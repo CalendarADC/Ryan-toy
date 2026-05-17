@@ -9,6 +9,7 @@ import CircularSparkleGenerateButton from "./CircularSparkleGenerateButton";
 import Step1FlipClock from "./Step1FlipClock";
 import WindowedMount from "./WindowedMount";
 import { emitToast } from "@/lib/ui/toast";
+import { copyImageToClipboard, copyImageToClipboardErrorMessage } from "@/lib/ui/copyImageToClipboard";
 import { downloadImage } from "@/lib/ui/downloadImage";
 import { CREATE_STEP_INSET, CREATE_STEP_PAPER } from "./createStepShell";
 import { step1CircleBtnClass } from "./createToolbarCircleButton";
@@ -43,23 +44,6 @@ function getDataUrlExt(url: string): string {
   if (url.startsWith("data:image/jpeg") || url.startsWith("data:image/jpg")) return "jpg";
   if (url.startsWith("data:image/webp")) return "webp";
   return "png";
-}
-
-async function copyDataUrlImageToClipboard(dataUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    if (!(blob instanceof Blob)) return false;
-    if (!navigator.clipboard || typeof window.ClipboardItem === "undefined") return false;
-    await navigator.clipboard.write([
-      new window.ClipboardItem({
-        [blob.type || "image/png"]: blob,
-      }),
-    ]);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export default function Step2Gallery() {
@@ -435,15 +419,14 @@ export default function Step2Gallery() {
                   title="复制图片到剪贴板"
                   onClick={async (e) => {
                     e.stopPropagation();
-                    const ok = await copyDataUrlImageToClipboard(img.url);
+                    const ok = await copyImageToClipboard(img.url);
                     if (ok) {
                       setCopiedId(img.id);
                       emitToast({ message: "已复制图片到剪贴板", type: "success" });
                       window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
                     } else {
                       emitToast({
-                        message:
-                          "复制失败：请在 HTTPS 或 localhost 环境使用支持图片剪贴板的浏览器（如 Chrome/Edge）。",
+                        message: copyImageToClipboardErrorMessage(),
                         type: "error",
                         durationMs: 2200,
                       });

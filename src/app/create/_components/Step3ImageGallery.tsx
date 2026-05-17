@@ -7,6 +7,7 @@ import ImagePreviewModal from "./ImagePreviewModal";
 import BrandButton from "./BrandButton";
 import WindowedMount from "./WindowedMount";
 import { emitToast } from "@/lib/ui/toast";
+import { copyImageToClipboard, copyImageToClipboardErrorMessage } from "@/lib/ui/copyImageToClipboard";
 import { downloadImage } from "@/lib/ui/downloadImage";
 import { applyStep1ReferenceFromGalleryUrl } from "@/lib/ui/applyStep1ReferenceFromGalleryUrl";
 import { CREATE_STEP_PAPER } from "./createStepShell";
@@ -87,23 +88,6 @@ function dataUrlToBlob(dataUrl: string): Blob {
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
   return new Blob([bytes], { type: mime });
-}
-
-async function copyDataUrlImageToClipboard(dataUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    if (!(blob instanceof Blob)) return false;
-    if (!navigator.clipboard || typeof window.ClipboardItem === "undefined") return false;
-    await navigator.clipboard.write([
-      new window.ClipboardItem({
-        [blob.type || "image/png"]: blob,
-      }),
-    ]);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function getImageInstanceKey(img: {
@@ -1349,15 +1333,14 @@ export default function Step3ImageGallery() {
                       title="复制图片到剪贴板"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        const ok = await copyDataUrlImageToClipboard(img.url);
+                        const ok = await copyImageToClipboard(img.url);
                         if (ok) {
                           setCopiedId(img.id);
                           emitToast({ message: "已复制图片到剪贴板", type: "success" });
                           window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
                         } else {
                           emitToast({
-                            message:
-                              "复制失败：请在 HTTPS 或 localhost 环境使用支持图片剪贴板的浏览器（如 Chrome/Edge）。",
+                            message: copyImageToClipboardErrorMessage(),
                             type: "error",
                             durationMs: 2200,
                           });
@@ -1727,9 +1710,9 @@ export default function Step3ImageGallery() {
                 <button
                   type="button"
                   onClick={async () => {
-                    const ok = await copyDataUrlImageToClipboard(current.url);
+                    const ok = await copyImageToClipboard(current.url);
                     if (ok) emitToast({ message: "已复制图片到剪贴板", type: "success" });
-                    else emitToast({ message: "复制失败，请重试", type: "error" });
+                    else emitToast({ message: copyImageToClipboardErrorMessage(), type: "error" });
                   }}
                   className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold"
                 >
