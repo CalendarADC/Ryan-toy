@@ -5,7 +5,8 @@ import { laoZhangChatCompletionSingleModel } from "@/lib/ai/laoZhangChatClient";
 import { requireApiActiveUser } from "@/lib/apiAuth";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { prisma } from "@/lib/db";
-import { ensureOwnedTaskId } from "@/lib/tasks/resolveTask";
+import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
+import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 type Body = {
   taskId?: string;
@@ -199,13 +200,17 @@ export async function POST(req: Request) {
       typeof body.selectedMainImageUrl === "string" ? body.selectedMainImageUrl : "";
 
     if (!prompt.trim()) {
-      return NextResponse.json({ message: "?? prompt" }, { status: 400 });
+      return NextResponse.json({ message: "缺少 prompt" }, { status: 400 });
     }
     const taskId = await ensureOwnedTaskId(authz.user.id, taskIdRaw, {
       upsertForDesktop: desktopUpsert,
+      trustClientTaskId: shouldTrustClientTaskId(req),
     });
     if (!taskId) {
-      return NextResponse.json({ message: "?? taskId" }, { status: 400 });
+      return NextResponse.json(
+        { message: "缺少 taskId，请先在左侧选择或新建任务。" },
+        { status: 400 },
+      );
     }
 
     const imageUrls = collectVisionImageUrls(galleryImages, selectedMainImageUrl);
@@ -382,18 +387,21 @@ export async function POST(req: Request) {
       description,
     };
 
-    await prisma.generatedCopywriting.create({
-      data: {
-        userId: authz.user.id,
-        taskId,
-        selectedMainImageId: body.selectedMainImageId ?? null,
-        title,
-        tags: finalTags,
-        description,
-        debugUsedModel: usedModel,
-        debugImageCount,
-      },
-    });
+    const persistMode = resolveImagePersistMode(req, authz.authSource);
+    if (!persistMode.clientOnly && !persistMode.localDisk) {
+      await prisma.generatedCopywriting.create({
+        data: {
+          userId: authz.user.id,
+          taskId,
+          selectedMainImageId: body.selectedMainImageId ?? null,
+          title,
+          tags: finalTags,
+          description,
+          debugUsedModel: usedModel,
+          debugImageCount,
+        },
+      });
+    }
 
     return NextResponse.json({
       ...copywriting,

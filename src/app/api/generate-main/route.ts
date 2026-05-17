@@ -34,9 +34,10 @@ import {
 import { requireApiActiveUser } from "@/lib/apiAuth";
 import { resolveLaoZhangApiKeyFromRequest } from "@/lib/apiLaoZhangKey";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
+import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
 import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
 import { buildCappyCalmCharacterLockBlock } from "@/lib/ip/cappyCalm";
-import { ensureOwnedTaskId } from "@/lib/tasks/resolveTask";
+import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 export const runtime = "nodejs";
 
@@ -123,16 +124,21 @@ export async function POST(req: Request) {
   const laoZhangImageModel = resolveLaoZhangImageModelFromBanana(bananaRaw);
 
   if (!prompt.trim()) {
-    return NextResponse.json({ message: "?? prompt" }, { status: 400 });
+    return NextResponse.json({ message: "缺少 prompt" }, { status: 400 });
   }
   const desktopLocalRuntime =
     (authz.authSource === "desktop-runtime" || authz.authSource === "desktop-ephemeral") &&
     isDesktopBundledClientRequest(req);
+  const imagePersistMode = resolveImagePersistMode(req, authz.authSource);
   const taskId = await ensureOwnedTaskId(authz.user.id, taskIdRaw, {
     upsertForDesktop: desktopLocalRuntime,
+    trustClientTaskId: shouldTrustClientTaskId(req),
   });
   if (!taskId) {
-    return NextResponse.json({ message: "?? taskId" }, { status: 400 });
+    return NextResponse.json(
+      { message: "缺少 taskId，请先在左侧选择或新建任务。" },
+      { status: 400 },
+    );
   }
 
   const laozhangApiKey = resolveLaoZhangApiKeyFromRequest(req, body.laozhangApiKey);
@@ -360,7 +366,8 @@ export async function POST(req: Request) {
         base64,
         debugPromptZh: userFacingExpandedPromptForThis,
         keyPrefix: `users/${authz.user.id}/step1`,
-        localMode: desktopLocalRuntime,
+        localMode: imagePersistMode.localDisk,
+        clientOnly: imagePersistMode.clientOnly,
       });
       generated.push({
         id: persisted.id,

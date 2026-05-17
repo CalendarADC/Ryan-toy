@@ -78,8 +78,17 @@ export async function persistGeneratedImage(args: {
   sourceMainImageId?: string;
   debugPromptZh?: string;
   keyPrefix: string;
+  /** 桌面：写入本机媒体目录 */
   localMode?: boolean;
+  /** 网页单机：仅返回 data URL，由浏览器 IndexedDB 持久化 */
+  clientOnly?: boolean;
 }): Promise<{ id: string; url: string; objectKey?: string }> {
+  if (args.clientOnly) {
+    return {
+      id: `client_${Date.now()}_${randomBytes(8).toString("hex")}`,
+      url: toDataPng(args.base64),
+    };
+  }
   if (args.localMode) {
     return persistPngToLocalMedia({
       userId: args.userId,

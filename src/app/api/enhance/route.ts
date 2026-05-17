@@ -31,10 +31,10 @@ import {
 } from "@/lib/step2/step2WearGender";
 import { requireApiActiveUser } from "@/lib/apiAuth";
 import { resolveLaoZhangApiKeyFromRequest } from "@/lib/apiLaoZhangKey";
-import { getDesktopDbMode } from "@/lib/desktop/desktopDbMode";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
+import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
 import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
-import { ensureOwnedTaskId } from "@/lib/tasks/resolveTask";
+import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 export const runtime = "nodejs";
 
@@ -157,9 +157,7 @@ export async function POST(req: Request) {
   const desktopUpsert =
     desktopBundled &&
     (authz.authSource === "desktop-runtime" || authz.authSource === "desktop-ephemeral");
-  const persistLocal =
-    desktopBundled &&
-    (authz.authSource === "desktop-ephemeral" || getDesktopDbMode() === "off");
+  const imagePersistMode = resolveImagePersistMode(req, authz.authSource);
 
   try {
   const body = (await req.json().catch(() => ({}))) as Partial<Body>;
@@ -198,8 +196,10 @@ export async function POST(req: Request) {
   }
   /** ??/???? taskId ????????????????????? */
   const taskIdForPersist =
-    (await ensureOwnedTaskId(authz.user.id, taskIdRaw, { upsertForDesktop: desktopUpsert })) ??
-    undefined;
+    (await ensureOwnedTaskId(authz.user.id, taskIdRaw, {
+      upsertForDesktop: desktopUpsert,
+      trustClientTaskId: shouldTrustClientTaskId(req),
+    })) ?? undefined;
 
   /** Node ? fetch ???? URL?????????????? */
   const resolvedMainImageUrl =
@@ -438,7 +438,8 @@ export async function POST(req: Request) {
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,
           keyPrefix: `users/${authz.user.id}/step3/on_model`,
-          localMode: persistLocal,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -492,7 +493,8 @@ export async function POST(req: Request) {
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,
           keyPrefix: `users/${authz.user.id}/step3/left`,
-          localMode: persistLocal,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -546,7 +548,8 @@ export async function POST(req: Request) {
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,
           keyPrefix: `users/${authz.user.id}/step3/right`,
-          localMode: persistLocal,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -605,7 +608,8 @@ export async function POST(req: Request) {
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,
           keyPrefix: `users/${authz.user.id}/step3/rear`,
-          localMode: persistLocal,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -658,7 +662,8 @@ export async function POST(req: Request) {
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,
           keyPrefix: `users/${authz.user.id}/step3/front`,
-          localMode: persistLocal,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
         });
         return makeGalleryImage({
           id: persisted.id,

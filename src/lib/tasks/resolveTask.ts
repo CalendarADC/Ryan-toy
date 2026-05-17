@@ -1,12 +1,31 @@
 import { prisma } from "@/lib/db";
+import {
+  isDesktopBundledClientRequest,
+  isDesktopLocalServerMode,
+  isWebLocalClientRequest,
+} from "@/lib/runtime/desktopLocalMode";
+
+/** 网页/桌面 strict-local：任务仅存本机，服务端信任客户端传来的 taskId */
+export function shouldTrustClientTaskId(req: Request): boolean {
+  return (
+    isDesktopBundledClientRequest(req) ||
+    isWebLocalClientRequest(req) ||
+    isDesktopLocalServerMode(req)
+  );
+}
 
 export async function ensureOwnedTaskId(
   userId: string,
   taskId: string,
-  opts?: { upsertForDesktop?: boolean },
+  opts?: { upsertForDesktop?: boolean; trustClientTaskId?: boolean },
 ): Promise<string | null> {
   const id = taskId.trim();
   if (!id) return null;
+
+  if (opts?.trustClientTaskId) {
+    return id;
+  }
+
   let task: { id: string } | null = null;
   try {
     task = await prisma.task.findFirst({
@@ -44,4 +63,3 @@ export async function ensureOwnedTaskId(
     }
   }
 }
-

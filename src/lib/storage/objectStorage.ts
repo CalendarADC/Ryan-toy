@@ -1,3 +1,5 @@
+import { isKeyOnlyAuthEnabled } from "@/lib/authMode";
+
 type ObjectStorageConfig = {
   endpoint: string;
   bucket: string;
@@ -13,6 +15,8 @@ function envEnabled(v: string | undefined): boolean {
 }
 
 function getObjectStorageConfig(): ObjectStorageConfig | null {
+  // 密钥 / 单机模式：图片仅存用户本机（浏览器或桌面目录），不上传 R2。
+  if (isKeyOnlyAuthEnabled()) return null;
   // 桌面版要求图片仅本地保存：显式关闭 R2 上传。
   if (envEnabled(process.env.DESKTOP_LOCAL_IMAGE_STORAGE)) return null;
 

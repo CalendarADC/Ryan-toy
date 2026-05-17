@@ -36,6 +36,20 @@ describe("persistGeneratedImage", () => {
     expect(data.objectKey).toBeNull();
   });
 
+  it("clientOnly returns data URL without prisma or object storage", async () => {
+    const { persistGeneratedImage } = await import("./persistGeneratedImage");
+    const out = await persistGeneratedImage({
+      userId: "web-local-user",
+      kind: "main",
+      base64: "iVBORw0KGgo=",
+      keyPrefix: "users/web-local-user/step1",
+      clientOnly: true,
+    });
+    expect(out.url.startsWith("data:image/png;base64,")).toBe(true);
+    expect(out.id.startsWith("client_")).toBe(true);
+    expect(out.objectKey).toBeUndefined();
+  });
+
   it("localMode writes PNG under GEMMUSE_LOCAL_MEDIA_DIR and returns /api/local-media URL", async () => {
     vi.resetModules();
     const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
