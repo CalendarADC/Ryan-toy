@@ -123,6 +123,161 @@ export function normalizeStep1ExpandedPromptDisplayBackground(
   return `${text}${sep}${fixedLine}`.trim();
 }
 
+/** AI 扩写：锆石镶嵌可选颜色（须完整书写，禁止自造） */
+export const STEP1_EXPAND_ZIRCON_COLOR_OPTIONS = [
+  "粉红锆",
+  "变蓝锆",
+  "紫蓝锆",
+  "中紫红锆",
+  "深紫红锆",
+  "桔红锆锆",
+  "石榴红锆",
+  "深石榴红锆",
+  "橄榄锆",
+  "香槟锆",
+  "白锆",
+  "黑尖晶锆",
+  "红刚玉锆",
+  "纳米黄锆",
+  "尖晶蓝锆",
+  "深纳米蓝锆",
+  "浅纳米蓝锆",
+  "中纳米蓝锆",
+  "绿纳米锆",
+  "鹅黄锆",
+  "黑锆",
+  "金黄锆",
+  "苹果绿锆",
+  "咖啡锆",
+  "胭锆",
+  "坦桑锆",
+  "绿锆",
+  "海蓝锆",
+  "深海蓝锆",
+] as const;
+
+export type Step1ExpandZirconColor = (typeof STEP1_EXPAND_ZIRCON_COLOR_OPTIONS)[number];
+
+/** 供系统提示注入：锆石颜色白名单 */
+export function formatStep1ExpandZirconColorWhitelist(): string {
+  return STEP1_EXPAND_ZIRCON_COLOR_OPTIONS.join("、");
+}
+
+/** 用户原文是否指定非锆石类主配石（此时可不强制改写成锆石） */
+const NON_ZIRCON_GEM_IN_USER_PROMPT_RE =
+  /(?:天然|主石|配石)?(?:钻石|红宝石|蓝宝石|祖母绿|翡翠|和田玉|珍珠|紫水晶|黄水晶|白水晶|水晶|玛瑙|碧玺|石榴石|橄榄石|尖晶石|刚玉|海蓝宝|坦桑石|碧玺石|月光石|托帕石)/i;
+
+export function userPromptSpecifiesNonZirconGemstone(userPrompt: string): boolean {
+  return NON_ZIRCON_GEM_IN_USER_PROMPT_RE.test(userPrompt);
+}
+
+function pickStep1ExpandZirconColor(seed: string): Step1ExpandZirconColor {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return STEP1_EXPAND_ZIRCON_COLOR_OPTIONS[h % STEP1_EXPAND_ZIRCON_COLOR_OPTIONS.length]!;
+}
+
+/** 将扩写中的非锆石配石名改写为白名单锆石色名（用户未指定其它宝石时） */
+const GEM_TO_ZIRCON_COLOR: Array<[RegExp, Step1ExpandZirconColor]> = [
+  [/紫水晶/g, "中紫红锆"],
+  [/黄水晶/g, "纳米黄锆"],
+  [/白水晶|水晶/g, "白锆"],
+  [/钻石/g, "白锆"],
+  [/红宝石/g, "石榴红锆"],
+  [/蓝宝石/g, "深海蓝锆"],
+  [/祖母绿/g, "绿锆"],
+  [/海蓝宝/g, "海蓝锆"],
+  [/坦桑石/g, "坦桑锆"],
+  [/玛瑙/g, "咖啡锆"],
+  [/碧玺/g, "粉红锆"],
+  [/石榴石/g, "深石榴红锆"],
+  [/橄榄石/g, "橄榄锆"],
+  [/尖晶石/g, "尖晶蓝锆"],
+  [/刚玉/g, "红刚玉锆"],
+  [/宝石/g, "香槟锆"],
+];
+
+function expandedTextHasZirconColor(text: string): boolean {
+  return STEP1_EXPAND_ZIRCON_COLOR_OPTIONS.some((c) => text.includes(c));
+}
+
+/**
+ * AI 扩写后处理：镶嵌配石优先锆石，锆石须使用白名单色名。
+ */
+export function normalizeStep1ExpandedZirconInlay(
+  expanded: string,
+  userPrompt: string
+): string {
+  let text = expanded;
+  const defaultColor = pickStep1ExpandZirconColor(userPrompt);
+
+  if (!userPromptSpecifiesNonZirconGemstone(userPrompt)) {
+    for (const [re, color] of GEM_TO_ZIRCON_COLOR) {
+      text = text.replace(re, color);
+    }
+  }
+
+  for (const c of STEP1_EXPAND_ZIRCON_COLOR_OPTIONS) {
+    text = text.replaceAll(`${c}石`, c);
+  }
+
+  text = text.replace(/锆石/g, defaultColor);
+
+  if (
+    !expandedTextHasZirconColor(text) &&
+    /镶嵌|镶口|配石|爪镶|包镶|钉镶|密镶/.test(text) &&
+    !userPromptSpecifiesNonZirconGemstone(userPrompt)
+  ) {
+    const trimmed = text.replace(/[。！？.!?]\s*$/, "");
+    text = `${trimmed}，主配石采用${defaultColor}镶嵌。`;
+  }
+
+  text = text.replace(/[，、]{2,}/g, "，");
+  text = text.replace(/[，、]\s*([。；\n])/g, "$1");
+  return text.trim();
+}
+
+/** 用户原文是否明确要求珐琅/琉璃类材质 */
+const ENAMEL_LIULI_IN_USER_PROMPT_RE =
+  /珐琅|琉璃|掐丝珐琅|搪瓷珐琅|法琅|烧蓝|enamel|cloisonn[eé]|liuli|琉璃质|琉璃材质/i;
+
+export function userPromptAllowsEnamelOrLiuli(userPrompt: string): boolean {
+  return ENAMEL_LIULI_IN_USER_PROMPT_RE.test(userPrompt);
+}
+
+const ENAMEL_LIULI_IN_EXPANDED_RE =
+  /珐琅|琉璃|掐丝珐琅|搪瓷珐琅|法琅|烧蓝|琉璃质|琉璃材质|enamel|cloisonn[eé]|liuli/gi;
+
+/**
+ * AI 扩写后处理：镶嵌相关描述禁止珐琅/琉璃（用户原文已要求时保留）。
+ */
+export function sanitizeStep1ExpandedInlayMaterials(
+  expanded: string,
+  userPrompt: string
+): string {
+  if (userPromptAllowsEnamelOrLiuli(userPrompt)) return expanded;
+  let text = expanded.replace(ENAMEL_LIULI_IN_EXPANDED_RE, "");
+  text = text.replace(/[，、]{2,}/g, "，");
+  text = text.replace(/[，、]\s*([。；\n])/g, "$1");
+  text = text.replace(/\s{2,}/g, " ");
+  return text.trim();
+}
+
+/** 扩写结果统一后处理（展示背景 + 镶嵌禁珐琅琉璃 + 锆石色名） */
+export function finalizeStep1ExpandedPrompt(
+  expanded: string,
+  kind: JewelryProductKind,
+  userPrompt: string
+): string {
+  return normalizeStep1ExpandedZirconInlay(
+    sanitizeStep1ExpandedInlayMaterials(
+      normalizeStep1ExpandedPromptDisplayBackground(expanded, kind),
+      userPrompt
+    ),
+    userPrompt
+  );
+}
+
 export function step1ExpandFailureUserHint(detail: string): string {
   const d = detail.toLowerCase();
   if (d.includes("1040") || d.includes("too many connections")) {
@@ -171,6 +326,18 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     `品类为吊坠时展示背景句必须为：展示背景：根据设计，把吊坠放到你认为合适的展示背景里`,
     "禁止描写具体台面/布景/环境（如丝绒、橡木、大理石、灰白无缝棚拍、深色木桌、柔光箱场景等）；禁止随机发明背景；把背景决策交给后续生图模型。",
     "扩写正文其它部分可写材质、工艺、造型与光影，但「展示背景」一行只能使用上述固定句。",
+    "",
+    "=== 镶嵌材质（硬性）===",
+    "凡涉及镶嵌、镶口、填色、装饰面时：禁止出现「珐琅」「琉璃」及同义表达（掐丝珐琅、烧蓝、搪瓷釉、法琅、enamel、liuli 等）。",
+    "优先改写为可量产的金属镶口工艺：爪镶、包镶、钉镶、珠镶、密镶、金属托镶、宝石镶口等。",
+    "仅当用户原始提示中已明确写出珐琅或琉璃时，才可保留该类材质；否则一律不得写入扩写结果。",
+    "",
+    "=== 宝石镶嵌配石（硬性）===",
+    "凡描述宝石镶嵌、配石、点缀石、彩宝镶口时：默认优先采用「锆石」作为主配石/点缀石表述。",
+    "锆石必须写出下列颜色名称中的完整色名（禁止只写「锆石」不写颜色，禁止自造色名）：",
+    formatStep1ExpandZirconColorWhitelist(),
+    "书写示例：爪镶香槟锆、密镶深海蓝锆点缀、包镶中紫红锆主石。",
+    "仅当用户原始提示已明确指定非锆石类宝石（如钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠、天然水晶等）时，才可保留该类宝石名称；否则不得用上述宝石替代锆石作为主配石表述。",
     "",
     "OUTPUT FORMAT: 只输出最终扩写后的中文提示词纯文本；禁止 JSON、Markdown、解释性前后缀。",
   ].join("\n");
@@ -230,7 +397,7 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
       }
       if (!content) throw new Error("Step1 AI 改写返回为空。");
       return {
-        expandedPrompt: normalizeStep1ExpandedPromptDisplayBackground(content, args.kind),
+        expandedPrompt: finalizeStep1ExpandedPrompt(content, args.kind, args.prompt),
         model,
       };
     }
