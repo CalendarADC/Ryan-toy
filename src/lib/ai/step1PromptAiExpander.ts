@@ -1,4 +1,7 @@
-import type { JewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
+import {
+  type JewelryProductKind,
+  userWantsDelicateThinWomensRing,
+} from "@/lib/ai/jewelrySoftLimits";
 
 type ExpandArgs = {
   prompt: string;
@@ -339,6 +342,14 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "书写示例：爪镶香槟锆、密镶深海蓝锆点缀、包镶中紫红锆主石。",
     "仅当用户原始提示已明确指定非锆石类宝石（如钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠、天然水晶等）时，才可保留该类宝石名称；否则不得用上述宝石替代锆石作为主配石表述。",
     "",
+    ...(args.kind === "ring" && userWantsDelicateThinWomensRing(args.prompt)
+      ? [
+          "=== 女性细戒 — 主题与戒臂平衡（硬性）===",
+          "用户意图为细戒/女戒/秀气通勤/适合女性日常佩戴：不论何种风格或主题，须强调纤细精致、可日常佩戴体量。",
+          "主题宜沿戒面上弧分布或自戒肩顺滑融入戒圈（约 1.2–2.0 倍戒臂宽度为体量上限）；禁止中央巨大盾形/牌饰/高台压在极细戒臂上，禁止头重脚轻与台阶式突兀过渡。",
+          "",
+        ]
+      : []),
     "OUTPUT FORMAT: 只输出最终扩写后的中文提示词纯文本；禁止 JSON、Markdown、解释性前后缀。",
   ].join("\n");
 

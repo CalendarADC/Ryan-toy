@@ -373,7 +373,7 @@ export function buildStrictSceneTonePreservationBlock(): string {
 export function userWantsDelicateThinWomensRing(prompt: string): boolean {
   const pl = prompt.toLowerCase();
   if (
-    /(细戒|细圈|细款戒|纤细|女戒|女士戒指|女性佩戴|适合女性|适合女士|女性.{0,4}佩戴|秀气|纤巧|轻薄戒|窄戒|细戒臂|戒臂[^，。\n]{0,8}细|小巧戒|精致小戒|日常通勤戒|通勤戒|通勤款|日常戒|日常佩戴|上班佩戴|通勤佩戴|办公佩戴)/i.test(
+    /(细戒|细戒指|细圈|细款戒|纤细|女戒|女士戒指|女性佩戴|适合女性|适合女士|女性.{0,4}佩戴|秀气|纤巧|轻薄戒|窄戒|细戒臂|戒臂[^，。\n]{0,8}细|小巧戒|精致小戒|日常通勤戒|通勤戒|通勤款|日常戒|日常佩戴|上班佩戴|通勤佩戴|办公佩戴|女性日常佩戴)/i.test(
       prompt
     )
   ) {
@@ -424,17 +424,43 @@ export function buildRingWomensOnModelLuxuryPresentationBlock(
   return buildRingWomensOnModelStyleAdaptiveBlock(prompt, varietySeed);
 }
 
-/** Step1：细戒/通勤/女性向时约束主题体量与戒臂融合，避免头重脚轻、造型夸张 */
+/**
+ * 女性细戒：主题区与戒臂比例平衡、肩线自然过渡（Step1 主图 / Step3 增强共用）。
+ * 良品参考：主题沿上弧分布或自戒肩渐宽融入，戒臂与装饰区体量接近、过渡连续。
+ * 劣品参考：极细戒臂 + 中央巨大盾形/牌饰/高台，断崖式台阶、头重脚轻。
+ */
 export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): string {
   if (!userWantsDelicateThinWomensRing(prompt)) return "";
   return [
-    "【细戒 / 日常通勤 / 女性佩戴 — 主题比例与融入（必须遵守）】",
-    "用户意图包含细戒、日常通勤戒、秀气款或适合女性/日常佩戴：动物/花卉等主题不得过大、过厚、过于夸张；禁止在戒面上做成喧宾夺主的“独立大台座”，避免相对戒臂严重头重脚轻、视觉失衡。",
-    "主题体量必须与戒臂宽度、厚度成比例；主题金属应沿戒臂两侧肩线自然延展、顺滑过渡融入（shoulder integration），像从戒圈生长出来，而不是整块摞在戒圈顶上。",
-    "DELICATE / EVERYDAY RING MOTIF (strict): centerpiece must be restrained and wearable — NOT theatrical oversized sculpture; compact relative to shank; natural shoulder integration.",
-    "NO exaggerated top mass: avoid huge crown, harsh step-off from band, or trophy-like proportions unsuitable for daily commute wear.",
-    "Integration: taper motif volume into ring shoulders with smooth, continuous metal flow; balanced, low-drama silhouette.",
+    "【女性细戒 — 纤巧精致与主题/戒臂平衡（必须遵守）】",
+    "触发：用户意图为细戒、女戒、秀气通勤款、适合女性/日常佩戴等；**不论**哥特、维多利亚、自然、动物、花卉、几何等何种设计风格或主题，均须遵守下列比例与过渡规则。",
+    "",
+    "整体气质：戒指须呈现**纤细、精致、可日常佩戴**的体量；戒臂为实心金属、有可信厚度，但不得细如一根金丝；主题区亦不得膨胀为占满指背的「大块牌饰」或独立雕塑台。",
+    "",
+    "平衡感（参考良品）：",
+    "- 主题装饰宜沿戒面**上弧**分布，或自**戒肩**向两侧顺滑延展、渐宽融入戒圈，像从戒臂「长出来」，而非整块摞在细圈顶上。",
+    "- 主题区最大宽度/视觉厚度宜与戒臂同量级：相对戒臂约 **1.2–2.0 倍**为合理上限；花卉、叶片、藤蔓、羽毛、兽首等须**克制体量**，保持秀气。",
+    "- 戒肩到戒臂须**连续金属流线**，无突兀断崖、无独立高台/厚垫/盾形大牌与极细戒臂的强烈对比。",
+    "",
+    "禁止（参考劣品 — 失败构图）：",
+    "- 戒臂四周极细，中央却突然隆起**巨大盾形/菱形牌饰/高台/厚垫**，中间造型视觉重量碾压戒圈（头重脚轻、过渡生硬）。",
+    "- 主题与戒臂**粗细悬殊**、台阶式断层、奖杯式大冠台、像「细铁丝 + 大块吊坠」拼在一起的效果。",
+    "- 为突出主题而牺牲戒臂连续性：禁止牺牲肩线融合去堆叠过厚、过宽的中央金属块。",
+    "",
+    "DELICATE WOMEN'S RING — SHANK / MOTIF BALANCE (strict, all styles):",
+    "Slender, refined, everyday-wearable scale. Motif mass must stay proportional to shank width and thickness — NOT a theatrical oversized centerpiece on a hairline wire band.",
+    "GOOD: motif spreads along the upper arc OR tapers from shoulders with smooth shoulder integration; motif footprint ~1.2–2.0× shank width max; continuous metal flow from band into decoration.",
+    "BAD (forbid): tiny wire shank + huge shield/plaque/platform/crown with abrupt step-off; trophy top much wider than band; kite/diamond plaque dominating a narrow loop; 'pendant on a wire' look.",
+    "Step3 / init note: if the input SKU already shows severe top-heavy imbalance, do NOT amplify it — gently correct toward proportional shoulders and integrated flow while keeping the same theme vocabulary.",
   ].join("\n");
+}
+
+/** 细戒专用全局负面补充（与 buildGlobalNegativePromptBlock 拼接） */
+export function buildDelicateRingBalanceNegativeLines(prompt: string): string[] {
+  if (!userWantsDelicateThinWomensRing(prompt)) return [];
+  return [
+    "Delicate women's ring negatives: NO oversized shield/kite/plaque centerpiece on a much thinner shank; NO abrupt vertical step from narrow band to thick top platform; NO trophy crown or standalone pedestal wider than ~2× the shank; NO 'thin wire + huge top charm' contrast; NO head-heavy silhouette where the motif reads as a separate lump on the band.",
+  ];
 }
 
 /**
@@ -469,6 +495,7 @@ export function buildGlobalNegativePromptBlock(
   const propClause = surfaceOk
     ? "unrelated freestanding ceramic figurines or random decorative wood crates as separate props (NOT the user-requested tabletop/surface); if the user described oak/wood grain/marble/fabric table or environment, render that faithfully — do NOT replace with seamless gray/white studio sweep."
     : "wood or ceramic props,";
+  const delicateRingNegatives = buildDelicateRingBalanceNegativeLines(prompt);
   const onModel = !!opts?.onModel;
   const wearingFailure =
     onModel
@@ -484,7 +511,7 @@ export function buildGlobalNegativePromptBlock(
     " matte dull flat metal with no highlights, flat lighting with no reflections, blurry output, low resolution, clutter objects, jewelry presentation box as prop, extra earrings or bracelets unless the text prompt explicitly requests a matching set." +
     wearingFailure +
     pendantNoChain;
-  return [head, ...GLOBAL_NEGATIVE_TAIL_LINES].join("\n");
+  return [head, ...delicateRingNegatives, ...GLOBAL_NEGATIVE_TAIL_LINES].join("\n");
 }
 
 /** 未传用户 prompt 时的最严默认（仍禁止木道具，避免无关木块） */
@@ -740,15 +767,20 @@ export function buildEnhanceSoftLimitSuffix(
     kind === "ring"
       ? buildRingPhysicalBlock("enhance", onModel)
       : buildPendantPhysicalBlock(onModel);
+  const delicateRingBalance =
+    kind === "ring" ? buildDelicateRingMotifScaleIntegrationBlock(prompt) : "";
   const toneLock = buildEnhanceInitToneLockBlock(onModel);
   const core = [
     physical,
+    delicateRingBalance,
     buildMaterialLightingBlock(pl, is925, onModel ? "on_model" : "product_table", true),
     buildGlobalNegativePromptBlock(prompt, {
       onModel,
       pendantProductNoChain: !onModel && kind === "pendant",
     }),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   if (onModel) {
     return (
       core +
