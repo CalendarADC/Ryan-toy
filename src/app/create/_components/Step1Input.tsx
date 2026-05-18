@@ -27,6 +27,7 @@ import {
 } from "@/lib/step1/step1Presets";
 import Step1PresetMenu from "./Step1PresetMenu";
 import Step1PresetWizard, { type Step1PresetWizardSavePayload } from "./Step1PresetWizard";
+import ImagePreviewModal from "./ImagePreviewModal";
 
 const MAX_REFERENCE_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_REFERENCE_IMAGE_PAYLOAD_BYTES = 900 * 1024;
@@ -318,6 +319,25 @@ export default function Step1Input() {
   const [presetDeleteTarget, setPresetDeleteTarget] = useState<Step1Preset | null>(null);
   const [presetRenameTarget, setPresetRenameTarget] = useState<Step1Preset | null>(null);
   const [presetRenameDraft, setPresetRenameDraft] = useState("");
+  const [referencePreviewIndex, setReferencePreviewIndex] = useState<number | null>(null);
+
+  const referencePreviewItems = useMemo(
+    () =>
+      step1ReferenceImageDataUrls.map((url, i) => ({
+        url,
+        alt: `参考图 ${i + 1}`,
+      })),
+    [step1ReferenceImageDataUrls]
+  );
+
+  useEffect(() => {
+    if (
+      referencePreviewIndex !== null &&
+      referencePreviewIndex >= step1ReferenceImageDataUrls.length
+    ) {
+      setReferencePreviewIndex(null);
+    }
+  }, [referencePreviewIndex, step1ReferenceImageDataUrls.length]);
 
   useEffect(() => {
     setPresets(loadStep1Presets());
@@ -859,21 +879,41 @@ export default function Step1Input() {
           <div className="mt-2 flex flex-wrap gap-2">
             {step1ReferenceImageDataUrls.map((src, index) => (
               <div key={`${index}-${src.slice(0, 48)}`} className="group relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={src}
-                  alt={`参考图 ${index + 1}`}
-                  className="h-14 w-14 rounded-lg border border-gray-200 object-cover shadow-sm"
-                />
+                <button
+                  type="button"
+                  title={`查看参考图 ${index + 1} 大图`}
+                  aria-label={`查看参考图 ${index + 1} 大图`}
+                  className="block cursor-zoom-in rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setReferencePreviewIndex(index);
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={`参考图 ${index + 1}`}
+                    className="h-14 w-14 rounded-lg border border-gray-200 object-cover shadow-sm transition group-hover:border-blue-300 group-hover:shadow-md"
+                  />
+                </button>
                 <button
                   type="button"
                   disabled={isGenerating}
                   title="移除此参考图"
-                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 bg-[var(--create-surface-paper)] text-[10px] font-bold text-gray-700 shadow hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                  aria-label={`移除参考图 ${index + 1}`}
+                  className="absolute -right-1 -top-1 z-[1] flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 bg-[var(--create-surface-paper)] text-[10px] font-bold text-gray-700 shadow hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                   onClick={(ev) => {
                     ev.stopPropagation();
                     removeStep1ReferenceImageAt(index);
                     setUploadHint(null);
+                    if (referencePreviewIndex === index) {
+                      setReferencePreviewIndex(null);
+                    } else if (
+                      referencePreviewIndex !== null &&
+                      referencePreviewIndex > index
+                    ) {
+                      setReferencePreviewIndex(referencePreviewIndex - 1);
+                    }
                   }}
                 >
                   ×
@@ -1297,6 +1337,14 @@ export default function Step1Input() {
           </div>
         </div>
       ) : null}
+
+      <ImagePreviewModal
+        open={referencePreviewIndex !== null && referencePreviewItems.length > 0}
+        items={referencePreviewItems}
+        index={referencePreviewIndex ?? 0}
+        onIndexChange={setReferencePreviewIndex}
+        onClose={() => setReferencePreviewIndex(null)}
+      />
 
       {presetDeleteTarget ? (
         <div
