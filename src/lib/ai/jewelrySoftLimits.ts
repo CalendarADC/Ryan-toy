@@ -439,7 +439,7 @@ export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): str
     "",
     "平衡感（参考良品）：",
     "- 主题装饰宜沿戒面**上弧**分布，或自**戒肩**向两侧顺滑延展、渐宽融入戒圈，像从戒臂「长出来」，而非整块摞在细圈顶上。",
-    "- 主题区最大宽度/视觉厚度宜与戒臂同量级：相对戒臂约 **1.2–2.0 倍**为合理上限；花卉、叶片、藤蔓、羽毛、兽首等须**克制体量**，保持秀气。",
+    "- 主题区最大宽度/视觉厚度宜与戒臂同量级：相对戒臂约 **1.2–1.8 倍**为合理上限；花卉、叶片、藤蔓、羽毛、兽首等须**克制体量**，保持秀气。",
     "- 戒肩到戒臂须**连续金属流线**，无突兀断崖、无独立高台/厚垫/盾形大牌与极细戒臂的强烈对比。",
     "",
     "禁止（参考劣品 — 失败构图）：",
@@ -449,7 +449,7 @@ export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): str
     "",
     "DELICATE WOMEN'S RING — SHANK / MOTIF BALANCE (strict, all styles):",
     "Slender, refined, everyday-wearable scale. Motif mass must stay proportional to shank width and thickness — NOT a theatrical oversized centerpiece on a hairline wire band.",
-    "GOOD: motif spreads along the upper arc OR tapers from shoulders with smooth shoulder integration; motif footprint ~1.2–2.0× shank width max; continuous metal flow from band into decoration.",
+    "GOOD: motif spreads along the upper arc OR tapers from shoulders with smooth shoulder integration; motif footprint ~1.2–1.8× shank width max; continuous metal flow from band into decoration.",
     "BAD (forbid): tiny wire shank + huge shield/plaque/platform/crown with abrupt step-off; trophy top much wider than band; kite/diamond plaque dominating a narrow loop; 'pendant on a wire' look.",
     "Step3 / init note: if the input SKU already shows severe top-heavy imbalance, do NOT amplify it — gently correct toward proportional shoulders and integrated flow while keeping the same theme vocabulary.",
   ].join("\n");
@@ -459,7 +459,7 @@ export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): str
 export function buildDelicateRingBalanceNegativeLines(prompt: string): string[] {
   if (!userWantsDelicateThinWomensRing(prompt)) return [];
   return [
-    "Delicate women's ring negatives: NO oversized shield/kite/plaque centerpiece on a much thinner shank; NO abrupt vertical step from narrow band to thick top platform; NO trophy crown or standalone pedestal wider than ~2× the shank; NO 'thin wire + huge top charm' contrast; NO head-heavy silhouette where the motif reads as a separate lump on the band.",
+    "Delicate women's ring negatives: NO oversized shield/kite/plaque centerpiece on a much thinner shank; NO abrupt vertical step from narrow band to thick top platform; NO trophy crown or standalone pedestal wider than ~1.8× the shank; NO 'thin wire + huge top charm' contrast; NO head-heavy silhouette where the motif reads as a separate lump on the band.",
   ];
 }
 

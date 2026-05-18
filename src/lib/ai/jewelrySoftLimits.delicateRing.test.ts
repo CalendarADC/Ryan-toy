@@ -25,7 +25,7 @@ describe("buildDelicateRingMotifScaleIntegrationBlock", () => {
   it("returns balance rules for delicate women's ring", () => {
     const block = buildDelicateRingMotifScaleIntegrationBlock("细戒指 紫藤 通勤");
     expect(block).toContain("纤巧精致");
-    expect(block).toContain("1.2–2.0");
+    expect(block).toContain("1.2–1.8");
     expect(block).toMatch(/盾形|牌饰/);
     expect(block).toContain("DELICATE WOMEN'S RING");
   });
