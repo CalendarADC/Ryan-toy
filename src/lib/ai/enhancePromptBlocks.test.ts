@@ -4,7 +4,10 @@ import {
   getInitToneLockInstruction,
   getStep3GemstoneColorLockBlock,
 } from "./enhancePromptBlocks";
-import { buildStep3MultiViewTonePreservationBlock } from "./jewelrySoftLimits";
+import {
+  buildStep3MandatoryCameraOrbitBlock,
+  buildStep3MultiViewTonePreservationBlock,
+} from "./jewelrySoftLimits";
 
 describe("enhancePromptBlocks", () => {
   it("variant b is shorter than a for tone and gem locks", () => {
@@ -14,6 +17,13 @@ describe("enhancePromptBlocks", () => {
     const bGem = getStep3GemstoneColorLockBlock("b");
     expect(bTone.length).toBeLessThan(aTone.length);
     expect(bGem.length).toBeLessThan(aGem.length);
+  });
+
+  it("mandatory orbit block requires visible camera delta", () => {
+    const left = buildStep3MandatoryCameraOrbitBlock("left");
+    expect(left).toMatch(/MANDATORY CAMERA DELTA/i);
+    expect(left).toMatch(/not.*same camera/i);
+    expect(left).toMatch(/counterclockwise/i);
   });
 
   it("tone locks forbid adding yellow cast beyond init", () => {

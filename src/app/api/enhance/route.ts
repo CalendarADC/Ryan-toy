@@ -18,6 +18,7 @@ import {
   buildPendantRearViewDefaultSolidBackBlock,
   buildRingWomensOnModelLuxuryPresentationBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
+  buildStep3MandatoryCameraOrbitBlock,
   buildStep3MultiViewTonePreservationBlock,
   inferJewelryProductKind,
   userSpecifiedPendantOrNecklaceRearDetail,
@@ -187,8 +188,11 @@ export async function POST(req: Request) {
   // Step3 ?????????????? img2img ???????????????
   // Step3 以「保持 SKU 与主图影调」为第一目标：降低随机度，减少发灰重打光与左右串位。
   const sampling = provider === "nano-banana-pro" ? { temperature: 0.22, topP: 0.6 } : undefined;
+  // 左右/后/正需要更大机位变化；过低 temperature 易输出与 init 几乎相同的图。
   const samplingLeftRight =
-    provider === "nano-banana-pro" ? { temperature: 0.18, topP: 0.55 } : undefined;
+    provider === "nano-banana-pro" ? { temperature: 0.32, topP: 0.68 } : undefined;
+  const samplingProductOrbit =
+    provider === "nano-banana-pro" ? { temperature: 0.3, topP: 0.66 } : undefined;
 
   if (!selectedMainImageId || !selectedMainImageUrl) {
     return NextResponse.json({ message: "?? selectedMainImage ???" }, { status: 400 });
@@ -235,6 +239,13 @@ export async function POST(req: Request) {
       aspectRatio,
       imageSize,
       sampling: samplingLeftRight ?? sampling,
+      laoZhangImageModel,
+      laozhangApiKey,
+    };
+    const sharedImgArgsProductOrbit = {
+      aspectRatio,
+      imageSize,
+      sampling: samplingProductOrbit ?? sampling,
       laoZhangImageModel,
       laozhangApiKey,
     };
@@ -454,6 +465,7 @@ export async function POST(req: Request) {
       const editPrompt = withEnhanceSoftLimits(
         prompt,
         [
+          buildStep3MandatoryCameraOrbitBlock("left"),
           `[SHOT_KIND: PRODUCT_LEFT_ORBIT — request ${runNonce}_L] Camera is on the jewelry's **physical LEFT** (counterclockwise from top). This is **NOT** a RIGHT-side shot; do **NOT** mirror a right-orbit composition.`,
           initToneLockInstruction,
           step3ToneLock,
@@ -509,6 +521,7 @@ export async function POST(req: Request) {
       const editPrompt = withEnhanceSoftLimits(
         prompt,
         [
+          buildStep3MandatoryCameraOrbitBlock("right"),
           `[SHOT_KIND: PRODUCT_RIGHT_ORBIT — request ${runNonce}_R] Camera is on the jewelry's **physical RIGHT** (clockwise from top). This is **NOT** a LEFT-side shot; do **NOT** reuse a left-orbit composition.`,
           initToneLockInstruction,
           step3ToneLock,
@@ -569,6 +582,7 @@ export async function POST(req: Request) {
       const editPrompt = withEnhanceSoftLimits(
         prompt,
         [
+          buildStep3MandatoryCameraOrbitBlock("rear"),
           `[SHOT_KIND: PRODUCT_REAR — request ${runNonce}_B]`,
           initToneLockInstruction,
           step3ToneLock,
@@ -598,7 +612,7 @@ export async function POST(req: Request) {
         const base64 = await laoZhangImageToImage({
           initImageDataUrl: resolvedMainImageUrl,
           prompt: editPrompt,
-          ...sharedImgArgs,
+          ...sharedImgArgsProductOrbit,
         });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
@@ -625,7 +639,8 @@ export async function POST(req: Request) {
       const editPrompt = withEnhanceSoftLimits(
         prompt,
         [
-          `[SHOT_KIND: PRODUCT_FRONT_RELIGHT — request ${runNonce}_F] True frontal relight / minor camera correction only; **NOT** a duplicate casual copy of the init if the init is already frontal.`,
+          buildStep3MandatoryCameraOrbitBlock("front"),
+          `[SHOT_KIND: PRODUCT_FRONT_RELIGHT — request ${runNonce}_F] True frontal relight; if the init is already a 3/4 hero, you **must** correct to a **true perpendicular frontal** — **NOT** a duplicate of the same 3/4 bearing.`,
           initToneLockInstruction,
           step3ToneLock,
           step3InputImageSovereigntyBlock(),
@@ -653,7 +668,7 @@ export async function POST(req: Request) {
         const base64 = await laoZhangImageToImage({
           initImageDataUrl: resolvedMainImageUrl,
           prompt: editPrompt,
-          ...sharedImgArgs,
+          ...sharedImgArgsProductOrbit,
         });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,

@@ -383,6 +383,26 @@ export function buildStep3MultiViewTonePreservationBlock(): string {
   ].join("\n\n");
 }
 
+/** 强制机位与 init 可区分，避免 img2img 只微调光影却标签为左/右/正视图。 */
+export function buildStep3MandatoryCameraOrbitBlock(
+  shot: "left" | "right" | "rear" | "front"
+): string {
+  const orbitHint =
+    shot === "left"
+      ? "orbit **counterclockwise** toward the piece's physical **LEFT** (~60°–110°)"
+      : shot === "right"
+        ? "orbit **clockwise** toward the physical **RIGHT** (~60°–110°)"
+        : shot === "rear"
+          ? "rotate to the **true back / rear** (~120°–180° from the hero face)"
+          : "square the camera to a **true frontal** hero (perpendicular to the display face)";
+  return [
+    `MANDATORY CAMERA DELTA (${shot.toUpperCase()} — non-negotiable): ${orbitHint}.`,
+    "The output **must** be visibly different in **viewing bearing** from the init — a viewer should immediately see this is **not** the same camera position as the Step2 hero.",
+    "If band ellipse, motif plane, and stone table read **the same** as the init (only polish/glare shifted), you **failed** — increase orbit until asymmetric lateral or rear/front cues dominate.",
+    "Preserve SKU, stones, and session tone; **change camera only** — but the camera change must be **obvious**.",
+  ].join(" ");
+}
+
 /** 细戒、女性向、日常通勤等：主题不宜过大夸张，需与戒臂比例协调、自然融入 */
 export function userWantsDelicateThinWomensRing(prompt: string): boolean {
   const pl = prompt.toLowerCase();

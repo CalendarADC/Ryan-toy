@@ -1,7 +1,7 @@
 import type { JewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 
 /** 与客户端/调试日志对齐：左右视图与影调辅助块变更时递增。 */
-export const ENHANCE_LR_TONE_BLOCKS_VERSION = "2026-05-1";
+export const ENHANCE_LR_TONE_BLOCKS_VERSION = "2026-05-2";
 
 /**
  * A/B：`a` 为当前默认长文案；`b` 为压缩版（左右/影调锁），减少无效 token。

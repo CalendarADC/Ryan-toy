@@ -204,6 +204,29 @@ async function prepareEnhanceInputUrl(url: string): Promise<string> {
   }
 }
 
+const STEP3_ORBIT_VIEW_TYPES = new Set<GalleryImageType>([
+  "left",
+  "right",
+  "front",
+  "top",
+  "side",
+  "rear",
+]);
+
+/** Step3 主视图即 Step2 原图；若侧视/正视等与主图同 URL，说明 img2img 未真正换机位。 */
+function warnStep3DuplicateViewUrls(images: GalleryImage[]): void {
+  const main = images.find((x) => x.type === "main");
+  if (!main?.url) return;
+  const dupes = images.filter((x) => STEP3_ORBIT_VIEW_TYPES.has(x.type) && x.url === main.url);
+  if (!dupes.length) return;
+  emitToast({
+    type: "info",
+    message:
+      "「主视图」会直接沿用 Step2 主图（属正常）。但部分侧视/正视图与主图文件相同，机位可能未旋转成功，请对对应视角点「重试」。",
+    durationMs: 9000,
+  });
+}
+
 function buildSingleShotPlans(args: {
   onModel: boolean;
   left: boolean;
@@ -1748,6 +1771,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
               t.id === get().activeTaskId ? { ...t, currentStep: "STEP3", updatedAt: new Date().toISOString() } : t
             ),
           });
+          warnStep3DuplicateViewUrls(merged);
           if (shouldSyncServerTasks()) {
             void fetch("/api/tasks", {
               method: "PATCH",
@@ -2037,6 +2061,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           });
 
           set({ status: withStep3Generating(get().status, false), error: null });
+          const scope = get().galleryImages.filter((x) => x.sourceMainImageId === sourceMainImageId);
+          warnStep3DuplicateViewUrls(scope);
         } catch (e) {
           const message = friendlyFetchErrorMessage(e);
           set({

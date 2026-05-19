@@ -1671,7 +1671,12 @@ export default function Step3ImageGallery() {
           if (!current) return null;
           return (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-gray-700">{galleryTypeLabel(current.type)}</div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-gray-700">{galleryTypeLabel(current.type)}</div>
+                {current.type === "main" ? (
+                  <div className="text-[10px] text-gray-500">与 Step2 主图相同，未重新生成</div>
+                ) : null}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
