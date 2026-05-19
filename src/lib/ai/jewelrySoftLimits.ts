@@ -463,6 +463,30 @@ export function buildDelicateRingBalanceNegativeLines(prompt: string): string[] 
   ];
 }
 
+/** 用户原文是否指定非锆石类主配石（与 step1 扩写逻辑对齐） */
+function userPromptSpecifiesNonZirconGemstoneForInlay(prompt: string): boolean {
+  return /(?:天然|主石|配石)?(?:钻石|红宝石|蓝宝石|祖母绿|翡翠|和田玉|珍珠|紫水晶|黄水晶|白水晶|水晶|玛瑙|碧玺|石榴石|橄榄石|尖晶石|刚玉|海蓝宝|坦桑石|碧玺石|月光石|托帕石)/i.test(
+    prompt
+  );
+}
+
+/**
+ * Step1 生图：配石为锆石时，由图像模型根据设计自动匹配色泽（勿默认全白）。
+ */
+export function buildZirconInlayAiColorMatchBlock(
+  prompt: string,
+  kind: JewelryProductKind
+): string {
+  if (kind !== "ring" && kind !== "pendant") return "";
+  if (userPromptSpecifiesNonZirconGemstoneForInlay(prompt)) return "";
+  return [
+    "【锆石配石 — 色泽由生图模型匹配（必须遵守）】",
+    "主配石/点缀石材质为锆石（除非用户原文明确要求其它宝石）。具体颜色不要机械默认无色或白色：请根据设计主题、风格、金属色（如 S925 银）与整体意境，自动选择协调、可量产的锆石色泽（暖花题材可用粉/香槟/浅金；哥特/神秘可用深红/紫/黑；海洋/星空可用蓝/绿等）。",
+    "若扩写已写「镶嵌你认为符合设计的锆石颜色」或「你认为符合设计的锆石」，须在本图中落实为与整体设计一致的锆石配色，而非忽略后一律做成白锆。",
+    "ZIRCON COLOR (image model decides): match hue to motif + style + metal; avoid habitually rendering all stones colorless/white unless the design truly calls for it.",
+  ].join("\n");
+}
+
 /**
  * 禁止单张图内出现多件首饰（如多枚戒指并排、多件陈列），Step1 构图 / 全局负面 / Step3 保真共用。
  */

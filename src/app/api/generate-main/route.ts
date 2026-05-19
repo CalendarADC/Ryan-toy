@@ -23,6 +23,7 @@ import {
   buildStep1BatchMotifDiversityPreamble,
   buildStep1PerImageMotifVariantLine,
   buildDelicateRingMotifScaleIntegrationBlock,
+  buildZirconInlayAiColorMatchBlock,
   buildGlobalNegativePromptBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
   inferJewelryProductKind,
@@ -266,6 +267,7 @@ export async function POST(req: Request) {
       buildMaterialLightingBlock(promptLower, isSterling925),
       buildMainImageCompositionBlock(kind, prompt),
       kind === "ring" ? buildDelicateRingMotifScaleIntegrationBlock(prompt) : "",
+      buildZirconInlayAiColorMatchBlock(prompt, kind),
       buildGlobalNegativePromptBlock(prompt, { pendantProductNoChain: kind === "pendant" }),
     ]
       .filter(Boolean)

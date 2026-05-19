@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildStep1ExpandDisplayBackgroundClause,
   finalizeStep1ExpandedPrompt,
-  formatStep1ExpandZirconColorWhitelist,
   normalizeStep1ExpandedPromptDisplayBackground,
   normalizeStep1ExpandedZirconInlay,
   sanitizeStep1ExpandedInlayMaterials,
-  STEP1_EXPAND_ZIRCON_COLOR_OPTIONS,
+  STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES,
+  STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE,
+  STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE,
   userPromptAllowsEnamelOrLiuli,
   userPromptSpecifiesNonZirconGemstone,
 } from "./step1PromptAiExpander";
@@ -49,27 +50,28 @@ describe("sanitizeStep1ExpandedInlayMaterials", () => {
     expect(sanitizeStep1ExpandedInlayMaterials(raw, "复古珐琅琉璃戒指")).toBe(raw);
   });
 
-  it("finalize applies both background and inlay rules", () => {
-    const raw = "设计戒指。镶嵌琉璃。展示背景：丝绒台面。";
+  it("finalize applies background, enamel, and zircon delegation", () => {
+    const raw = "设计戒指。爪镶白锆主石。展示背景：丝绒台面。";
     const out = finalizeStep1ExpandedPrompt(raw, "ring", "花朵戒指");
-    expect(out).not.toMatch(/琉璃|丝绒/);
+    expect(out).not.toMatch(/琉璃|丝绒|白锆/);
     expect(out).toContain("展示背景：根据设计，把戒指放到你认为合适的展示背景里");
+    expect(out).toMatch(/你认为符合设计的锆石|符合设计的锆石颜色/);
   });
 });
 
 describe("normalizeStep1ExpandedZirconInlay", () => {
-  it("exports full zircon color whitelist for system prompt", () => {
-    expect(STEP1_EXPAND_ZIRCON_COLOR_OPTIONS).toContain("香槟锆");
-    expect(STEP1_EXPAND_ZIRCON_COLOR_OPTIONS).toContain("桔红锆锆");
-    expect(formatStep1ExpandZirconColorWhitelist()).toContain("深海蓝锆");
+  it("strips catalog zircon color names to design-matched delegation", () => {
+    const raw = "爪镶香槟锆，密镶深海蓝锆点缀。";
+    const out = normalizeStep1ExpandedZirconInlay(raw, "向日葵戒指");
+    expect(out).not.toMatch(/香槟锆|深海蓝锆/);
+    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
   });
 
-  it("rewrites common gemstones to zircon colors when user did not specify", () => {
+  it("rewrites common gemstones to zircon delegation when user did not specify", () => {
     const raw = "爪镶紫水晶，密镶钻石点缀。";
     const out = normalizeStep1ExpandedZirconInlay(raw, "向日葵戒指");
-    expect(out).toContain("中紫红锆");
-    expect(out).toContain("白锆");
-    expect(out).not.toMatch(/紫水晶|钻石/);
+    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
+    expect(out).not.toMatch(/紫水晶|钻石|白锆/);
   });
 
   it("keeps diamond when user prompt explicitly requests", () => {
@@ -78,14 +80,19 @@ describe("normalizeStep1ExpandedZirconInlay", () => {
     expect(normalizeStep1ExpandedZirconInlay(raw, "复古钻石戒指")).toContain("钻石");
   });
 
-  it("replaces bare 锆石 with a whitelist color name", () => {
+  it("replaces bare 锆石 with design-matched stone phrase", () => {
     const out = normalizeStep1ExpandedZirconInlay("包镶锆石主石。", "银戒");
-    expect(out).not.toContain("锆石");
-    expect(STEP1_EXPAND_ZIRCON_COLOR_OPTIONS.some((c) => out.includes(c))).toBe(true);
+    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
+    expect(out).not.toMatch(/包镶锆石主石/);
   });
 
-  it("appends default zircon inlay when镶嵌 mentioned but no gem named", () => {
+  it("appends design-matched inlay phrase when镶嵌 mentioned but no zircon wording", () => {
     const out = normalizeStep1ExpandedZirconInlay("戒面采用爪镶工艺。", "花朵戒指");
-    expect(out).toMatch(/主配石采用.+锆镶嵌/);
+    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE);
+  });
+
+  it("catalog list still defined for post-process stripping", () => {
+    expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES).toContain("白锆");
+    expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES.length).toBeGreaterThan(20);
   });
 });
