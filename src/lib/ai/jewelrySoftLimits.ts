@@ -363,10 +363,24 @@ export function userRequestsStrictScenePreservation(prompt: string): boolean {
 export function buildStrictSceneTonePreservationBlock(): string {
   return [
     "STRICT SCENE+TONE PRESERVATION (highest priority): Treat init/reference photo as photometric master.",
-    "Keep the SAME background scene identity and grade: exposure, white balance, contrast curve, saturation intent, shadow depth, highlight rolloff, and warmth.",
+    "Keep the SAME background scene identity and grade: exposure, white balance, contrast curve, saturation intent, shadow depth, highlight rolloff — match init warmth **as-is**, neither cooler nor warmer.",
     "FORBID global re-light, gray cast, desaturation, matte haze, low-contrast wash, or cool-down that makes metal/stone look darker or duller.",
+    "FORBID global **yellow / amber / golden** cast, tungsten shift, or pushing neutral backgrounds toward tan/cream unless the init already had that grade.",
     "If any style line conflicts with this lock, this lock wins.",
   ].join("\n");
+}
+
+/**
+ * Step3 多视角（左/右/后/正）默认影调锁：不依赖用户文案是否写「保持色调」。
+ * 解决侧视/后视常被模型「暖化」、整体偏黄的问题。
+ */
+export function buildStep3MultiViewTonePreservationBlock(): string {
+  return [
+    buildStrictSceneTonePreservationBlock(),
+    "STEP3 MULTI-VIEW COLOR STABILITY (strict): left/right/rear/front product shots must read as the **same photo session** as the init — **only** camera bearing changes.",
+    "Match init metal color (silver stays silver-toned, not brassy), stone hues, cushion/fabric/wood **if visible** — do not invent yellower velvet, warmer oak, or amber global grade.",
+    "Side and rear orbits often trigger erroneous warm relights; **explicitly resist** that failure mode.",
+  ].join("\n\n");
 }
 
 /** 细戒、女性向、日常通勤等：主题不宜过大夸张，需与戒臂比例协调、自然融入 */
@@ -627,7 +641,7 @@ export function buildMaterialLightingBlock(
     context === "on_model"
       ? "editorial on-model jewelry photography: believable hand skin + ring metal; sharp focus on the worn piece; natural subsurface scatter on skin — NOT a tabletop macro packshot with no wearer."
       : forEnhanceFromInit
-        ? "macro product photography **in the same lighting/color family as the init reference**; sharp focus on fine metal texture; preserve highlight warmth and shadow depth from the hero frame."
+        ? "macro product photography **in the same lighting/color family and white balance as the init reference**; sharp focus on fine metal texture; preserve highlight **character** and shadow depth from the hero frame — **do not** add yellow/amber warmth beyond the init."
         : "macro product photography; sharp focus on fine metal texture;";
   const lines = [
     "MATERIAL & LIGHTING (reject plastic / toy look):",
@@ -671,10 +685,10 @@ export function buildEnhanceInitToneLockBlock(onModel: boolean): string {
     ].join("\n");
   }
   return [
-    "INIT PHOTOMASTER MATCH (table / box Step3 — absolute): The init defines the **target grade**. **Lock** exposure, white balance, saturation, shadow depth, highlight rolloff, cushion/fabric hue, and wood warmth so this reads as **the same photo session** as the hero — **only** the camera bearing changes.",
-    "METAL / PATINA: match the init's **exact** metal read (including dark recess oxidation, brushed vs polish mix, micro-contrast). FORBID re-grading into flat neutral gray, low-contrast \"AI packshot\", or forced mirror polish upgrade.",
-    "GEMS / PEARLS / ACCENTS: keep **hue and saturation** aligned with the init — no pastel washing, no gray veil over pinks or moonstones.",
-    "FORBID beauty-filter haze, global lift that crushes mood, or swapping warm velvet/cream for cool gray seamless. FORBID \"clean up\" relights that dull the piece vs the main view.",
+    "INIT PHOTOMASTER MATCH (table / box Step3 — absolute): The init defines the **target grade**. **Lock** exposure, white balance, saturation, shadow depth, highlight rolloff, and background/cushion/fabric hue **exactly as in the init** so this reads as **the same photo session** as the hero — **only** the camera bearing changes.",
+    "METAL / PATINA: match the init's **exact** metal read (including dark recess oxidation, brushed vs polish mix, micro-contrast). FORBID re-grading into flat neutral gray, low-contrast \"AI packshot\", forced mirror polish upgrade, or **brassy / yellow-tinted silver**.",
+    "GEMS / PEARLS / ACCENTS: keep **hue and saturation** aligned with the init — no pastel washing, no gray veil over pinks or moonstones, **no global yellowing** of stones.",
+    "FORBID beauty-filter haze, global lift that crushes mood, or arbitrary warm relights (yellow/amber cast, tungsten shift, yellower wood/velvet than init). FORBID \"clean up\" relights that dull the piece vs the main view.",
   ].join("\n\n");
 }
 

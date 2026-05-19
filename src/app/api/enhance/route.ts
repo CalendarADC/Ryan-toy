@@ -10,17 +10,16 @@ import {
 } from "@/lib/ai/AIService";
 import {
   getInitToneLockInstruction,
-  getStep3LeftRightGemstoneColorLockBlock,
+  getStep3GemstoneColorLockBlock,
   getStep3LeftRightPromptVariant,
 } from "@/lib/ai/enhancePromptBlocks";
 import {
   buildEnhanceSoftLimitSuffix,
   buildPendantRearViewDefaultSolidBackBlock,
   buildRingWomensOnModelLuxuryPresentationBlock,
-  buildStrictSceneTonePreservationBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
+  buildStep3MultiViewTonePreservationBlock,
   inferJewelryProductKind,
-  userRequestsStrictScenePreservation,
   userSpecifiedPendantOrNecklaceRearDetail,
   userWantsWomensRingOnModelPresentation,
 } from "@/lib/ai/jewelrySoftLimits";
@@ -242,11 +241,9 @@ export async function POST(req: Request) {
 
     const kind = inferJewelryProductKind(prompt);
     const lrAbVariant = getStep3LeftRightPromptVariant();
-    const lrGemToneBlock = getStep3LeftRightGemstoneColorLockBlock(lrAbVariant);
+    const gemHueLockBlock = getStep3GemstoneColorLockBlock(lrAbVariant);
     const initToneLockInstruction = getInitToneLockInstruction(lrAbVariant);
-    const strictSceneToneLock = userRequestsStrictScenePreservation(prompt)
-      ? buildStrictSceneTonePreservationBlock()
-      : "";
+    const step3ToneLock = buildStep3MultiViewTonePreservationBlock();
 
     const baseKeepInstruction =
       "IMAGE EDIT ONLY: Preserve the init image design bit-for-bit intent ? zero redesign. Same silhouette, same motif, same stones, same metal finish **and the same overall exposure / white balance / saturation / shadow depth as the init**; only apply the requested camera orbit. **FORBID** a global gray haze, flat low-contrast relight, or desaturated \"catalog re-grade\" vs the reference.";
@@ -256,7 +253,7 @@ export async function POST(req: Request) {
     const keepMainBackgroundInstruction =
       [
         "BACKGROUND CONSISTENCY (strict): keep the exact same background style/color/lighting setup as the input main image; only change viewing angle. Do NOT replace with a new scene or different backdrop.",
-        "If the init shows a **jewelry cushion / velvet / fabric tray**, preserve **the same hue family and texture scale** (e.g. warm beige stays warm beige) ? do NOT jump to unrelated gray seamless, blue-gray sweep, or a different wood tone.",
+        "If the init shows a **jewelry cushion / velvet / fabric tray / wood table**, preserve **the same hue family and texture scale as the init** — do NOT jump to unrelated gray seamless, blue-gray sweep, yellower cream/amber wood, or a warmer tan cast than the hero.",
       ].join("\n");
     const strictFrontViewInstruction = [
       "FRONT VIEW HARD CONSTRAINTS (strict):",
@@ -459,10 +456,10 @@ export async function POST(req: Request) {
         [
           `[SHOT_KIND: PRODUCT_LEFT_ORBIT — request ${runNonce}_L] Camera is on the jewelry's **physical LEFT** (counterclockwise from top). This is **NOT** a RIGHT-side shot; do **NOT** mirror a right-orbit composition.`,
           initToneLockInstruction,
-          strictSceneToneLock,
+          step3ToneLock,
           step3InputImageSovereigntyBlock(),
           baseKeepInstruction,
-          lrGemToneBlock,
+          gemHueLockBlock,
           pendantBailLock,
           pendantLateralViewForSide("left"),
           ringLeftRightViewFullBlock,
@@ -514,10 +511,10 @@ export async function POST(req: Request) {
         [
           `[SHOT_KIND: PRODUCT_RIGHT_ORBIT — request ${runNonce}_R] Camera is on the jewelry's **physical RIGHT** (clockwise from top). This is **NOT** a LEFT-side shot; do **NOT** reuse a left-orbit composition.`,
           initToneLockInstruction,
-          strictSceneToneLock,
+          step3ToneLock,
           step3InputImageSovereigntyBlock(),
           baseKeepInstruction,
-          lrGemToneBlock,
+          gemHueLockBlock,
           pendantBailLock,
           pendantLateralViewForSide("right"),
           ringLeftRightViewFullBlock,
@@ -574,9 +571,10 @@ export async function POST(req: Request) {
         [
           `[SHOT_KIND: PRODUCT_REAR — request ${runNonce}_B]`,
           initToneLockInstruction,
-          strictSceneToneLock,
+          step3ToneLock,
           step3InputImageSovereigntyBlock(),
           baseKeepInstruction,
+          gemHueLockBlock,
           pendantBailLock,
           ringRearViewFullBlock,
           "Generate a REAR / BACK view of the jewelry: show the back of the setting, rear of bail (for pendants), clasp back, or inner/back surfaces as appropriate?still as a clean studio product shot.",
@@ -629,9 +627,10 @@ export async function POST(req: Request) {
         [
           `[SHOT_KIND: PRODUCT_FRONT_RELIGHT — request ${runNonce}_F] True frontal relight / minor camera correction only; **NOT** a duplicate casual copy of the init if the init is already frontal.`,
           initToneLockInstruction,
-          strictSceneToneLock,
+          step3ToneLock,
           step3InputImageSovereigntyBlock(),
           baseKeepInstruction,
+          gemHueLockBlock,
           pendantBailLock,
           "Generate a straight-on FRONT view of the jewelry: camera facing the primary display face at eye level (like a standard e-commerce hero shot), centered composition in studio product photography.",
           "NOT a top-down / overhead angle. Show the front of the ring shank and stone, or the front face of the pendant, matching the input design.",

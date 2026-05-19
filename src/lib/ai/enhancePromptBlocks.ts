@@ -1,7 +1,7 @@
 import type { JewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 
 /** 与客户端/调试日志对齐：左右视图与影调辅助块变更时递增。 */
-export const ENHANCE_LR_TONE_BLOCKS_VERSION = "2026-04-1";
+export const ENHANCE_LR_TONE_BLOCKS_VERSION = "2026-05-1";
 
 /**
  * A/B：`a` 为当前默认长文案；`b` 为压缩版（左右/影调锁），减少无效 token。
@@ -15,28 +15,36 @@ export function getStep3LeftRightPromptVariant(): "a" | "b" {
 export function getInitToneLockInstruction(variant: "a" | "b"): string {
   if (variant === "b") {
     return [
-      "INIT TONE LOCK: match init warm grade (cushion/wood/highlight depth). No gray haze or catalog re-grade.",
-      "Keep same exposure/WB/saturation intent vs reference; forbid global relight that dulls metal.",
+      "INIT TONE LOCK: match init white balance + exposure + saturation (not warmer than init).",
+      "FORBID yellow/amber global cast or tungsten shift; forbid gray haze or catalog re-grade.",
     ].join(" ");
   }
   return [
-    "INIT TONE LOCK (absolute): keep the same warm scene grade as init (same cushion cream hue, same wood warmth, same highlight sparkle intensity, same shadow depth). Do NOT apply gray cast, low-contrast wash, matte fog, or auto relight that makes metal look dull.",
+    "INIT TONE LOCK (absolute): match the init hero's **exact** photometric grade — same white balance, exposure, contrast curve, saturation, shadow depth, and background hue family as the reference frame.",
+    "Do NOT add a global **yellow / amber / golden** cast, tungsten warmth, or 'warm filter' that was not already in the init.",
+    "Do NOT apply gray cast, low-contrast wash, matte fog, or auto relight that dulls metal — but also **do not** push neutral/cool heroes toward warm cream/wood tones.",
   ].join("\n");
 }
 
-export function getStep3LeftRightGemstoneColorLockBlock(variant: "a" | "b"): string {
+/** Step3 左/右/后等产品角度：宝石色相跟随 init，禁止借换视角改色。 */
+export function getStep3GemstoneColorLockBlock(variant: "a" | "b"): string {
   if (variant === "b") {
     return [
-      "GEM HUE LOCK (left/right): keep each stone's base hue vs init; forbid hue shifts that mimic camera move.",
+      "GEM HUE LOCK (all product orbits): keep each stone's base hue vs init; forbid yellowing or hue shifts.",
       "Highlights may move; underlying stone color/saturation/count must not change.",
     ].join(" ");
   }
   return [
-    "GEMSTONE COLOR / HUE LOCK (strict ? left/right only):",
-    "Every visible gem (center stone, eyes, accents) must keep the **same base hue and body color** as the init ? e.g. **blue stays blue**, **green stays green**.",
-    "**FORBID** recoloring stones to simulate variety when the camera did not actually move. Gem hue shifts = **incorrect** output for this brief.",
-    "Specular highlights may relocate with light; **do not** change underlying stone color, saturation, or apparent species/count.",
+    "GEMSTONE COLOR / HUE LOCK (strict — left/right/rear/front product views):",
+    "Every visible gem must keep the **same base hue and body color** as the init — e.g. **blue stays blue**, **green stays green**, neutral stones stay neutral.",
+    "**FORBID** global yellowing of stones/metal/background, amber cast, or recoloring to simulate variety when only the camera moved.",
+    "Specular highlights may relocate; **do not** change underlying stone color, saturation, or count.",
   ].join("\n");
+}
+
+/** @deprecated 使用 getStep3GemstoneColorLockBlock */
+export function getStep3LeftRightGemstoneColorLockBlock(variant: "a" | "b"): string {
+  return getStep3GemstoneColorLockBlock(variant);
 }
 
 /** 仅戒指需要 inner shank 约束时注入，吊坠跳过以省 token。 */
