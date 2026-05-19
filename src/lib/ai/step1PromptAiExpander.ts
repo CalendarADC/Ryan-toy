@@ -166,10 +166,10 @@ export const STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES = [
 export const STEP1_EXPAND_ZIRCON_COLOR_OPTIONS = STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES;
 
 /** 扩写输出中镶嵌配石的统一表述（不写死色号） */
-export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE = "镶嵌你认为符合设计的锆石颜色";
+export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE = "镶嵌你认为颜色符合设计的锆石";
 
-/** 镶口工艺后接的锆石表述（如「爪镶你认为符合设计的锆石」） */
-export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE = "你认为符合设计的锆石";
+/** 镶口工艺后接的锆石表述（如「爪镶你认为颜色符合设计的锆石」） */
+export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE = "你认为颜色符合设计的锆石";
 
 /** 用户原文是否指定非锆石类主配石（此时可不强制改写成锆石） */
 const NON_ZIRCON_GEM_IN_USER_PROMPT_RE =
@@ -188,7 +188,7 @@ const GEM_TO_ZIRCON_DELEGATION: Array<[RegExp, string]> = [
 ];
 
 const ZIRCON_DELEGATION_ALREADY_RE =
-  /你认为符合(?:整体)?设计的锆石|符合设计的锆石颜色|镶嵌你认为符合设计的锆石颜色/;
+  /你认为颜色符合(?:整体)?设计的锆石|镶嵌你认为颜色符合设计的锆石|你认为符合设计的锆石|镶嵌你认为符合设计的锆石颜色|符合设计的锆石颜色/;
 
 function expandedTextHasZirconDelegation(text: string): boolean {
   return ZIRCON_DELEGATION_ALREADY_RE.test(text);
@@ -209,7 +209,7 @@ function collapseZirconDelegationPhrases(text: string): string {
 }
 
 /**
- * AI 扩写后处理：配石统一为锆石，禁止写死商品色号，改为「符合设计的锆石颜色」交由生图模型配色。
+ * AI 扩写后处理：配石统一为锆石，禁止写死商品色号，改为「镶嵌你认为颜色符合设计的锆石」交由生图模型配色。
  */
 export function normalizeStep1ExpandedZirconInlay(
   expanded: string,
@@ -219,7 +219,9 @@ export function normalizeStep1ExpandedZirconInlay(
     return expanded.trim();
   }
 
-  let text = expanded;
+  let text = expanded
+    .replace(/镶嵌你认为符合设计的锆石颜色/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE)
+    .replace(/你认为符合设计的锆石/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
 
   for (const c of STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES) {
     text = text.replaceAll(`${c}石`, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
@@ -340,9 +342,9 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "",
     "=== 宝石镶嵌配石（硬性 — 材质锆石，颜色交给生图）===",
     "配石材质以「锆石」为主（可量产金属镶口 + 锆石）。扩写阶段禁止写明具体锆石色号、商品色名或色板名（如粉红锆、白锆、香槟锆、深海蓝锆、纳米蓝锆等）；禁止擅自写钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠等作为主配石，除非用户原文已明确指定。",
-    "凡描述镶嵌、配石、点缀石、彩宝镶口时：不得写具体颜色形容词锁定配石（如「红色锆石」「白色主石」「蓝色点缀」）；一律改写为「镶嵌你认为符合设计的锆石颜色」，或等价表述（如「爪镶你认为符合整体设计的锆石」「密镶符合本款主题与风格的锆石」）。",
+    "凡描述镶嵌、配石、点缀石、彩宝镶口时：不得写具体颜色形容词锁定配石（如「红色锆石」「白色主石」「蓝色点缀」）；一律改写为「镶嵌你认为颜色符合设计的锆石」，或等价表述（如「爪镶你认为颜色符合整体设计的锆石」「密镶你认为颜色符合本款主题与风格的锆石」）。",
     "具体锆石色泽由后续 AI 生图模型根据设计主题、风格、金属色（如 S925 银）与整体意境自动匹配，扩写只交代材质与工艺，不替生图模型选色。",
-    "书写示例：戒面爪镶你认为符合设计的锆石；叶脉间密镶符合整体意境的锆石颜色；包镶点缀，镶嵌你认为符合设计的锆石颜色。",
+    "书写示例：戒面爪镶你认为颜色符合设计的锆石；叶脉间密镶你认为颜色符合整体意境的锆石；包镶点缀，镶嵌你认为颜色符合设计的锆石。",
     "仅当用户原始提示已明确指定非锆石类宝石或明确颜色要求时，才可保留用户意图中的相关表述。",
     "",
     ...(args.kind === "ring" && userWantsDelicateThinWomensRing(args.prompt)

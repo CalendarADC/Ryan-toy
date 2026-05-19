@@ -55,7 +55,7 @@ describe("sanitizeStep1ExpandedInlayMaterials", () => {
     const out = finalizeStep1ExpandedPrompt(raw, "ring", "花朵戒指");
     expect(out).not.toMatch(/琉璃|丝绒|白锆/);
     expect(out).toContain("展示背景：根据设计，把戒指放到你认为合适的展示背景里");
-    expect(out).toMatch(/你认为符合设计的锆石|符合设计的锆石颜色/);
+    expect(out).toMatch(/你认为颜色符合设计的锆石/);
   });
 });
 
