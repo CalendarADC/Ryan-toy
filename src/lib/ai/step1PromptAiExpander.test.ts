@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  analyzeStep1ReferencesWithAi,
   buildStep1ExpandDisplayBackgroundClause,
   finalizeStep1ExpandedPrompt,
   normalizeStep1ExpandedPromptDisplayBackground,
   normalizeStep1ExpandedZirconInlay,
+  resolveStep1ExpandChatCompletionsUrl,
+  sanitizeStep1ReferenceImageUrls,
   sanitizeStep1ExpandedInlayMaterials,
+  step1ExpandFailureUserHint,
   STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES,
   STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE,
   STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE,
@@ -94,5 +98,106 @@ describe("normalizeStep1ExpandedZirconInlay", () => {
   it("catalog list still defined for post-process stripping", () => {
     expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES).toContain("白锆");
     expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES.length).toBeGreaterThan(20);
+  });
+});
+
+describe("resolveStep1ExpandChatCompletionsUrl", () => {
+  it("keeps coding/v3 base for Coding Plan vision models", () => {
+    expect(
+      resolveStep1ExpandChatCompletionsUrl("https://ark.cn-beijing.volces.com/api/coding/v3")
+    ).toBe("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions");
+  });
+
+  it("maps plain api/v3 base to chat completions", () => {
+    expect(resolveStep1ExpandChatCompletionsUrl("https://ark.cn-beijing.volces.com/api/v3")).toBe(
+      "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+    );
+  });
+});
+
+describe("sanitizeStep1ReferenceImageUrls", () => {
+  it("keeps at most 3 valid data or https urls", () => {
+    const urls = [
+      "data:image/png;base64,a",
+      "https://cdn.example/a.png",
+      "ftp://bad",
+      "data:image/png;base64,b",
+      "data:image/png;base64,c",
+      "data:image/png;base64,d",
+    ];
+    expect(sanitizeStep1ReferenceImageUrls(urls)).toEqual([
+      "data:image/png;base64,a",
+      "https://cdn.example/a.png",
+      "data:image/png;base64,b",
+    ]);
+  });
+});
+
+describe("step1ExpandFailureUserHint", () => {
+  it("suggests vision model when upstream rejects images", () => {
+    const hint = step1ExpandFailureUserHint("model does not support image input");
+    expect(hint).toContain("STEP1_EXPAND_VISION_MODEL");
+  });
+});
+
+describe("analyzeStep1ReferencesWithAi", () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.STEP1_EXPAND_API_KEY;
+  const originalVision = process.env.STEP1_EXPAND_VISION_MODEL;
+
+  beforeEach(() => {
+    process.env.STEP1_EXPAND_API_KEY = "test-key";
+    process.env.STEP1_EXPAND_VISION_MODEL = "doubao-vision-mock";
+    process.env.STEP1_EXPAND_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env.STEP1_EXPAND_API_KEY = originalKey;
+    process.env.STEP1_EXPAND_VISION_MODEL = originalVision;
+    vi.restoreAllMocks();
+  });
+
+  it("posts multimodal user content with image_url parts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { content: "S925银戒指，十字浮雕，爪镶锆石。" } }],
+        }),
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const result = await analyzeStep1ReferencesWithAi({
+      referenceImageDataUrls: ["data:image/png;base64,abc", "https://cdn.test/ref.jpg"],
+      existingPrompt: "哥特十字架",
+      selectedStyles: ["哥特风"],
+    });
+
+    expect(result.analyzedPrompt).toContain("S925");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      model: string;
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    expect(body.model).toBe("doubao-vision-mock");
+    const userMsg = body.messages.find((m) => m.role === "user");
+    expect(Array.isArray(userMsg?.content)).toBe(true);
+    const parts = userMsg?.content as Array<{ type: string }>;
+    expect(parts.filter((p) => p.type === "image_url")).toHaveLength(2);
+    expect(parts.some((p) => p.type === "text")).toBe(true);
+    const headers = init.headers as Record<string, string> | Headers;
+    const auth =
+      headers instanceof Headers
+        ? headers.get("Authorization")
+        : (headers as Record<string, string>).Authorization;
+    expect(auth).toBe("Bearer test-key");
+  });
+
+  it("throws when no valid reference images", async () => {
+    await expect(
+      analyzeStep1ReferencesWithAi({ referenceImageDataUrls: ["not-an-image"] })
+    ).rejects.toThrow(/参考图/);
   });
 });

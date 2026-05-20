@@ -1,16 +1,16 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
-  expandStep1PromptWithAi,
+  analyzeStep1ReferencesWithAi,
   resolveStep1ExpandRuntimeConfig,
 } from "@/lib/ai/step1PromptAiExpander";
-import { inferJewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 import { requireApiActiveUser } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
 type Body = {
-  prompt: string;
+  referenceImageDataUrls?: string[];
+  prompt?: string;
   selectedStyles?: string[];
 };
 
@@ -20,25 +20,30 @@ export async function POST(req: Request) {
     if (!authz.ok) return authz.response;
 
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;
-    const prompt = typeof body.prompt === "string" ? body.prompt : "";
-    const selectedStyles = Array.isArray(body.selectedStyles) ? body.selectedStyles.filter(Boolean) : [];
-    if (!prompt.trim()) {
-      return NextResponse.json({ message: "缺少 prompt" }, { status: 400 });
-    }
+    const referenceImageDataUrls = Array.isArray(body.referenceImageDataUrls)
+      ? body.referenceImageDataUrls.filter((x): x is string => typeof x === "string")
+      : [];
+    const existingPrompt = typeof body.prompt === "string" ? body.prompt : "";
+    const selectedStyles = Array.isArray(body.selectedStyles)
+      ? body.selectedStyles.filter(Boolean)
+      : [];
 
-    const kind = inferJewelryProductKind(prompt);
-    const result = await expandStep1PromptWithAi({ prompt, kind, selectedStyles });
+    const result = await analyzeStep1ReferencesWithAi({
+      referenceImageDataUrls,
+      existingPrompt,
+      selectedStyles,
+    });
+
     return NextResponse.json({
-      expandedPrompt: result.expandedPrompt,
+      analyzedPrompt: result.analyzedPrompt,
       model: result.model,
-      kind,
       expandProvider: result.expandConfig.providerLabel,
       expandBaseUrlHost: result.expandConfig.baseUrlHost,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Step1 改写失败";
+    const message = e instanceof Error ? e.message : "参考图识图失败";
     const cfg = resolveStep1ExpandRuntimeConfig();
-    console.error("[step1-expand]", cfg.baseUrlHost, e);
+    console.error("[step1-reference-prompt]", cfg.baseUrlHost, e);
     return NextResponse.json(
       {
         message,
@@ -49,4 +54,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

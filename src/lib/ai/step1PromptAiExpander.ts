@@ -12,10 +12,73 @@ type ExpandArgs = {
   selectedStyles?: string[];
 };
 
+export const STEP1_EXPAND_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
+export const STEP1_EXPAND_DEFAULT_MODEL = "ark-code-latest";
+/** 火山方舟多模态识图；须在控制台开通，可用 STEP1_EXPAND_VISION_MODEL 覆盖 */
+export const STEP1_EXPAND_DEFAULT_VISION_MODEL = "doubao-1-5-vision-pro-32k-250115";
+
+export const STEP1_REFERENCE_VISION_MAX_IMAGES = 3;
+
+export type Step1ExpandRuntimeConfig = {
+  baseUrl: string;
+  model: string;
+  /** 供前端/日志核对：桌面与网页差异来自环境变量，不是两套代码 */
+  providerLabel: string;
+  baseUrlHost: string;
+};
+
 type ExpandResult = {
   expandedPrompt: string;
   model: string;
+  expandConfig: Step1ExpandRuntimeConfig;
 };
+
+export type ReferenceAnalyzeResult = {
+  analyzedPrompt: string;
+  model: string;
+  expandConfig: Step1ExpandRuntimeConfig;
+};
+
+export type Step1ExpandVisionRuntimeConfig = Step1ExpandRuntimeConfig & {
+  chatCompletionsUrl: string;
+  visionModel: string;
+};
+
+type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export type Step1ChatMessage = {
+  role: "system" | "user";
+  content: string | ChatContentPart[];
+};
+
+export function labelStep1ExpandProvider(baseUrl: string): string {
+  const u = baseUrl.toLowerCase();
+  if (u.includes("volces.com") || u.includes("ark.cn-beijing")) return "字节火山方舟";
+  if (u.includes("modelverse.cn")) return "Modelverse 网关";
+  return "自定义扩写网关";
+}
+
+/** 桌面 / Vercel / 本地 dev 共用：仅由 STEP1_EXPAND_* 环境变量决定上游，无分端硬编码 */
+export function resolveStep1ExpandRuntimeConfig(): Step1ExpandRuntimeConfig {
+  const baseUrl = (
+    process.env.STEP1_EXPAND_BASE_URL || STEP1_EXPAND_DEFAULT_BASE_URL
+  ).replace(/\/+$/, "");
+  const model = process.env.STEP1_EXPAND_MODEL || STEP1_EXPAND_DEFAULT_MODEL;
+  let baseUrlHost = baseUrl;
+  try {
+    baseUrlHost = new URL(baseUrl).host;
+  } catch {
+    /* keep raw */
+  }
+  return {
+    baseUrl,
+    model,
+    providerLabel: labelStep1ExpandProvider(baseUrl),
+    baseUrlHost,
+  };
+}
 
 type OpenAiChatResponse = {
   choices?: Array<{
@@ -35,6 +98,92 @@ function extractAssistantText(
   const content = message?.content?.trim() ?? "";
   if (content) return content;
   return message?.reasoning_content?.trim() ?? "";
+}
+
+/** 识图走 Chat Completions（多模态）；Coding Plan 的 kimi 等模型仅在 coding/v3 下可用，勿改到 /api/v3 */
+export function resolveStep1ExpandChatCompletionsUrl(configuredBase?: string): string {
+  const raw = (configuredBase || process.env.STEP1_EXPAND_BASE_URL || STEP1_EXPAND_DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    ""
+  );
+  if (raw.includes("/api/coding/v3")) {
+    return `${raw}/chat/completions`;
+  }
+  if (raw.endsWith("/api/v3")) {
+    return `${raw}/chat/completions`;
+  }
+  if (raw.includes("/chat/completions")) {
+    return raw;
+  }
+  if (raw.endsWith("/v1")) {
+    return `${raw}/chat/completions`;
+  }
+  return `${raw}/chat/completions`;
+}
+
+export function resolveStep1ExpandVisionRuntimeConfig(): Step1ExpandVisionRuntimeConfig {
+  const textCfg = resolveStep1ExpandRuntimeConfig();
+  const visionModel =
+    process.env.STEP1_EXPAND_VISION_MODEL?.trim() ||
+    process.env.STEP1_EXPAND_MODEL?.trim() ||
+    STEP1_EXPAND_DEFAULT_VISION_MODEL;
+  const chatCompletionsUrl = resolveStep1ExpandChatCompletionsUrl(
+    process.env.STEP1_EXPAND_BASE_URL || STEP1_EXPAND_DEFAULT_BASE_URL
+  );
+  let baseUrlHost = chatCompletionsUrl;
+  try {
+    baseUrlHost = new URL(chatCompletionsUrl).host;
+  } catch {
+    /* keep raw */
+  }
+  return {
+    ...textCfg,
+    model: visionModel,
+    visionModel,
+    chatCompletionsUrl,
+    baseUrlHost,
+    providerLabel: labelStep1ExpandProvider(chatCompletionsUrl),
+  };
+}
+
+export function sanitizeStep1ReferenceImageUrls(urls: string[] | undefined): string[] {
+  if (!urls?.length) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const u of urls) {
+    const t = u.trim();
+    if (!t.startsWith("data:image/") && !t.startsWith("http://") && !t.startsWith("https://")) {
+      continue;
+    }
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= STEP1_REFERENCE_VISION_MAX_IMAGES) break;
+  }
+  return out;
+}
+
+function buildReferenceVisionUserContent(args: {
+  imageUrls: string[];
+  existingPrompt?: string;
+  selectedStyles?: string[];
+}): ChatContentPart[] {
+  const lines = [
+    "请根据附带的珠宝参考图，输出一段可直接用于 Banana Pro 文生图的中文提示词，目标是生成同款或极近似的单品主图。",
+    "必须写清：品类（戒指或吊坠）、金属材质与色泽、主体造型/纹样、镶嵌与配石、工艺细节、整体风格气质、建议的展示角度与光影。",
+    "只描述一件首饰、一张主图；禁止 JSON、Markdown、编号列表、前后解释。",
+  ];
+  if (args.selectedStyles?.length) {
+    lines.push(`用户已选风格参考：${args.selectedStyles.join("、")}。`);
+  }
+  if (args.existingPrompt?.trim()) {
+    lines.push(`用户当前草稿（请在其意图上补全，勿无关推翻）：${args.existingPrompt.trim()}`);
+  }
+  const parts: ChatContentPart[] = [{ type: "text", text: lines.join("\n") }];
+  for (const url of args.imageUrls) {
+    parts.push({ type: "image_url", image_url: { url } });
+  }
+  return parts;
 }
 
 function requireStep1ExpandApiKey(): string {
@@ -305,15 +454,158 @@ export function step1ExpandFailureUserHint(detail: string): string {
   if (d.includes("401") || d.includes("unauthorized") || d.includes("invalid api key")) {
     return "请检查 STEP1_EXPAND_API_KEY 是否有效、是否过期。";
   }
+  if (
+    d.includes("403") &&
+    (d.includes("overdue") || d.includes("unpaid") || d.includes("account overdue"))
+  ) {
+    if (d.includes("modelverse")) {
+      return "扩写仍指向 Modelverse（多为 Vercel 未改 STEP1_EXPAND_BASE_URL）。请在 Vercel 把扩写三项改为火山方舟，或结清 Modelverse 账单。";
+    }
+    return "扩写上游账户欠费或未结清账单，请到对应平台（火山方舟 / Modelverse）控制台处理；网页端请在 Vercel 核对 STEP1_EXPAND_* 是否与桌面 .env.local 一致。";
+  }
+  if (
+    /does not exist|you do not have access|model or endpoint/i.test(detail) &&
+    (d.includes("404") || detail.includes("404"))
+  ) {
+    return "识图模型 ID 在火山方舟不存在或未开通。Coding Plan 请保持 STEP1_EXPAND_BASE_URL 为 coding/v3，并将 STEP1_EXPAND_VISION_MODEL 设为控制台已开通的多模态模型（如 kimi-k2.6）；或改用豆包视觉 endpoint ID。";
+  }
+  if (
+    /image|vision|multimodal|multi-modal|不支持.*图|not support.*image|invalid.*image/i.test(detail)
+  ) {
+    return "当前 STEP1_EXPAND_VISION_MODEL 可能不支持识图，请在环境变量中配置火山方舟已开通的多模态模型（如豆包视觉系列或 kimi-k2.6）。";
+  }
   return "若持续失败，请检查 STEP1_EXPAND_API_KEY / STEP1_EXPAND_MODEL / STEP1_EXPAND_BASE_URL，或稍后重试。";
+}
+
+export async function postStep1ExpandChat(args: {
+  url: string;
+  apiKey: string;
+  model: string;
+  messages: Step1ChatMessage[];
+  temperature?: number;
+  errorLabel?: string;
+}): Promise<string> {
+  const apiKey = args.apiKey;
+  const label = args.errorLabel ?? "Step1 AI";
+  const payload = {
+    model: args.model,
+    temperature: args.temperature ?? 0.85,
+    messages: args.messages,
+  };
+  const maxAttempts = 3;
+  const backoffMs = [0, 900, 2200];
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      await sleep(backoffMs[attempt]!);
+    }
+
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(args.url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      text = await res.text().catch(() => "");
+    } catch (netErr) {
+      const msg = netErr instanceof Error ? netErr.message : String(netErr);
+      if (attempt === maxAttempts - 1) {
+        throw new Error(`${label}失败（网络）：${msg}`);
+      }
+      continue;
+    }
+
+    if (res.ok) {
+      let content = "";
+      try {
+        const data = JSON.parse(text) as OpenAiChatResponse;
+        content = extractAssistantText(data?.choices?.[0]?.message);
+      } catch {
+        content = text.trim();
+      }
+      if (!content) throw new Error(`${label}返回为空。`);
+      return content;
+    }
+
+    const detail = parseExpandErrorDetail(text);
+    const retry =
+      attempt < maxAttempts - 1 && shouldRetryStep1ExpandHttp(res.status, detail);
+    if (!retry) {
+      throw new Error(`${label}失败（HTTP ${res.status}）：${detail || "unknown error"}`);
+    }
+  }
+
+  throw new Error(`${label}失败：重试次数已用尽。`);
+}
+
+export async function analyzeStep1ReferencesWithAi(args: {
+  referenceImageDataUrls: string[];
+  existingPrompt?: string;
+  selectedStyles?: string[];
+}): Promise<ReferenceAnalyzeResult> {
+  const imageUrls = sanitizeStep1ReferenceImageUrls(args.referenceImageDataUrls);
+  if (!imageUrls.length) {
+    throw new Error("请先上传至少一张参考图。");
+  }
+
+  const apiKey = requireStep1ExpandApiKey();
+  const visionCfg = resolveStep1ExpandVisionRuntimeConfig();
+
+  const system = [
+    "你是珠宝电商视觉分析与文生图提示词专家，服务中文用户。",
+    "任务：根据用户上传的珠宝参考图，反推一段可直接交给 Banana Pro（Gemini 类珠宝主图模型）的中文生图提示词，用于生成同款或高度相似的单品。",
+    "",
+    "输出要求（硬性）：",
+    "- 全文使用简体中文；禁止 JSON、Markdown、标题、解释性前后缀。",
+    "- 明确品类：戒指 或 吊坠（从图中判断）。",
+    "- 写清金属（如 S925 银、镀金等）、主体纹样/造型、镶嵌工艺、配石类型与布局、结构比例、风格气质。",
+    "- 描述适合电商主图的视角与光影（如正面、轻微 3/4、台面静物），但避免冗长布景堆砌。",
+    "- 只描述一件首饰的一张主图；禁止一图多件、系列陈列。",
+    "- 不要输出「展示背景：」固定句或灯泡扩写专用的格式套话；这是给生图模型直接阅读的工艺与造型描述。",
+    "- 若用户提供草稿文字或风格标签，在其意图上补全而非无关替换。",
+  ].join("\n");
+
+  const content = await postStep1ExpandChat({
+    url: visionCfg.chatCompletionsUrl,
+    apiKey,
+    model: visionCfg.visionModel,
+    temperature: 0.4,
+    errorLabel: "参考图识图",
+    messages: [
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: buildReferenceVisionUserContent({
+          imageUrls,
+          existingPrompt: args.existingPrompt,
+          selectedStyles: args.selectedStyles,
+        }),
+      },
+    ],
+  });
+
+  const expandConfig: Step1ExpandRuntimeConfig = {
+    baseUrl: visionCfg.chatCompletionsUrl,
+    model: visionCfg.visionModel,
+    providerLabel: visionCfg.providerLabel,
+    baseUrlHost: visionCfg.baseUrlHost,
+  };
+
+  return {
+    analyzedPrompt: content.trim(),
+    model: visionCfg.visionModel,
+    expandConfig,
+  };
 }
 
 export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandResult> {
   const apiKey = requireStep1ExpandApiKey();
-  const baseUrl = (
-    process.env.STEP1_EXPAND_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3"
-  ).replace(/\/+$/, "");
-  const model = process.env.STEP1_EXPAND_MODEL || "ark-code-latest";
+  const { baseUrl, model, providerLabel, baseUrlHost } = resolveStep1ExpandRuntimeConfig();
 
   const system = [
     "You are a senior jewelry concept prompt expander for Chinese-speaking users.",
@@ -379,66 +671,22 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     args.prompt.trim(),
   ].filter(Boolean).join("\n");
 
-  const payload = {
+  const url = `${baseUrl}/chat/completions`;
+  const content = await postStep1ExpandChat({
+    url,
+    apiKey,
     model,
     temperature: 0.85,
+    errorLabel: "Step1 AI 改写",
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
+  });
+
+  return {
+    expandedPrompt: finalizeStep1ExpandedPrompt(content, args.kind, args.prompt),
+    model,
+    expandConfig: { baseUrl, model, providerLabel, baseUrlHost },
   };
-
-  const url = `${baseUrl}/chat/completions`;
-  const maxAttempts = 3;
-  const backoffMs = [0, 900, 2200];
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (attempt > 0) {
-      await sleep(backoffMs[attempt]!);
-    }
-
-    let res: Response;
-    let text: string;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      text = await res.text().catch(() => "");
-    } catch (netErr) {
-      const msg = netErr instanceof Error ? netErr.message : String(netErr);
-      if (attempt === maxAttempts - 1) {
-        throw new Error(`Step1 AI 改写失败（网络）：${msg}`);
-      }
-      continue;
-    }
-
-    if (res.ok) {
-      let content = "";
-      try {
-        const data = JSON.parse(text) as OpenAiChatResponse;
-        content = extractAssistantText(data?.choices?.[0]?.message);
-      } catch {
-        content = text.trim();
-      }
-      if (!content) throw new Error("Step1 AI 改写返回为空。");
-      return {
-        expandedPrompt: finalizeStep1ExpandedPrompt(content, args.kind, args.prompt),
-        model,
-      };
-    }
-
-    const detail = parseExpandErrorDetail(text);
-    const retry =
-      attempt < maxAttempts - 1 && shouldRetryStep1ExpandHttp(res.status, detail);
-    if (!retry) {
-      throw new Error(`Step1 AI 改写失败（HTTP ${res.status}）：${detail || "unknown error"}`);
-    }
-  }
-
-  throw new Error("Step1 AI 改写失败：重试次数已用尽。");
 }

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useJewelryGeneratorStore } from "@/store/jewelryGeneratorStore";
-import Step1FlipClock from "./Step1FlipClock";
+import Step1FlipClock, { type Step1FlipClockPhase } from "./Step1FlipClock";
 import Step1GenerateButton from "./Step1GenerateButton";
 import { applyStep1ReferenceFromGalleryUrl } from "@/lib/ui/applyStep1ReferenceFromGalleryUrl";
 import { consumeGalleryDragPayload, GALLERY_DRAG_REF_MIME } from "@/lib/ui/galleryDragPayload";
@@ -28,6 +28,7 @@ import {
 import Step1PresetMenu from "./Step1PresetMenu";
 import Step1PresetWizard, { type Step1PresetWizardSavePayload } from "./Step1PresetWizard";
 import ImagePreviewModal from "./ImagePreviewModal";
+import { step1ExpandFailureUserHint } from "@/lib/ai/step1PromptAiExpander";
 
 const MAX_REFERENCE_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_REFERENCE_IMAGE_PAYLOAD_BYTES = 900 * 1024;
@@ -42,6 +43,7 @@ const STEP1_PROMPT_TEXTAREA_MAX_PX = 320;
 
 /** AI 扩写进行中：琥珀高亮 + 脉冲，与生成按钮禁用态呼应 */
 const STEP1_EXPAND_BULB_CLASS = `${STEP1_CIRCLE_BTN_BASE} pointer-events-none border-amber-400 bg-amber-50 text-amber-900 shadow-[0_0_18px_rgba(245,158,11,0.5)] ring-2 ring-amber-300/80 ring-offset-1 ring-offset-[var(--create-surface-paper)] animate-[pulse_0.85s_ease-in-out_infinite]`;
+const STEP1_ANALYZE_EYE_CLASS = `${STEP1_CIRCLE_BTN_BASE} pointer-events-none border-sky-400 bg-sky-50 text-sky-800 shadow-[0_0_16px_rgba(56,189,248,0.45)] ring-2 ring-sky-300/80 ring-offset-1 ring-offset-[var(--create-surface-paper)] animate-[pulse_0.85s_ease-in-out_infinite]`;
 
 type Step1ToolbarMenu = "model" | "count" | "style" | "preset";
 
@@ -117,6 +119,29 @@ function IconStep1Dice({ className }: { className?: string }) {
         .join(" ")}
       aria-hidden
     />
+  );
+}
+
+/** 参考图识图（眼睛） */
+function IconStep1Eye({ className }: { className?: string }) {
+  return (
+    <svg
+      width={18}
+      height={18}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={["pointer-events-none shrink-0 select-none", className].filter(Boolean).join(" ")}
+      aria-hidden
+    >
+      <path
+        d="M2 12C4.5 7 8 4 12 4s7.5 3 10 8c-2.5 5-6 8-10 8S4.5 17 2 12Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
   );
 }
 
@@ -310,6 +335,9 @@ export default function Step1Input() {
   const step1StartedAt = status.step1GenerationStartedAt;
   const [step1TimerTick, setStep1TimerTick] = useState(0);
   const [isExpandingPrompt, setIsExpandingPrompt] = useState(false);
+  const [expandStartedAt, setExpandStartedAt] = useState<number | null>(null);
+  const [isAnalyzingReference, setIsAnalyzingReference] = useState(false);
+  const [analyzeStartedAt, setAnalyzeStartedAt] = useState<number | null>(null);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [presets, setPresets] = useState<Step1Preset[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
@@ -375,14 +403,90 @@ export default function Step1Input() {
     ta.style.overflowY = sh > max ? "auto" : "hidden";
   }, []);
 
+  const handleReferencePromptAnalyze = useCallback(async () => {
+    if (isGenerating || isExpandingPrompt || isAnalyzingReference) return;
+    if (!step1ReferenceImageDataUrls.length) {
+      emitToast({ type: "error", message: "请先上传至少一张参考图，再点眼睛识图。" });
+      return;
+    }
+    setAnalyzeStartedAt(Date.now());
+    setIsAnalyzingReference(true);
+    try {
+      const res = await fetch("/api/step1-reference-prompt", {
+        method: "POST",
+        credentials: "include",
+        headers: withDesktopLocalHeader({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          referenceImageDataUrls: step1ReferenceImageDataUrls.slice(0, 3),
+          prompt: prompt.trim(),
+          selectedStyles: selectedStyles
+            .map((id) => STEP1_STYLE_OPTIONS.find((s) => s.id === id)?.label || id)
+            .filter(Boolean),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          message?: string;
+          expandProvider?: string;
+          expandBaseUrlHost?: string;
+        } | null;
+        const detail = data?.message || `参考图识图失败（HTTP ${res.status}）`;
+        const via =
+          data?.expandProvider && data?.expandBaseUrlHost
+            ? `当前识图网关：${data.expandProvider}（${data.expandBaseUrlHost}）。`
+            : "";
+        const hint = step1ExpandFailureUserHint(detail);
+        const core =
+          hint.includes("火山方舟") ||
+          hint.includes("STEP1_EXPAND") ||
+          hint.includes("VISION")
+            ? hint
+            : detail;
+        throw new Error(via ? `${via}${core}` : core);
+      }
+      const data = (await res.json()) as {
+        analyzedPrompt?: string;
+        expandProvider?: string;
+        expandBaseUrlHost?: string;
+      };
+      const analyzedPrompt = (data.analyzedPrompt ?? "").trim();
+      if (!analyzedPrompt) {
+        throw new Error("参考图识图失败：返回为空。");
+      }
+      setPrompt(analyzedPrompt);
+      requestAnimationFrame(() => syncPromptTextareaHeight());
+      const via = data.expandProvider
+        ? `（${data.expandProvider}${data.expandBaseUrlHost ? ` · ${data.expandBaseUrlHost}` : ""}）`
+        : "";
+      emitToast({ type: "success", message: `已根据参考图生成提示词${via}，可再点灯泡扩写或直接生成。` });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "参考图识图失败，请稍后重试。";
+      emitToast({ type: "error", message });
+    } finally {
+      setIsAnalyzingReference(false);
+      setAnalyzeStartedAt(null);
+    }
+  }, [
+    isGenerating,
+    isExpandingPrompt,
+    isAnalyzingReference,
+    isAnalyzingReference,
+    prompt,
+    selectedStyles,
+    step1ReferenceImageDataUrls,
+    setPrompt,
+    syncPromptTextareaHeight,
+  ]);
+
   const handleInstantAiExpand = useCallback(async () => {
-    if (isGenerating || isExpandingPrompt) return;
+    if (isGenerating || isExpandingPrompt || isAnalyzingReference) return;
     const rawPrompt = prompt.trim();
     if (!rawPrompt) {
       emitToast({ type: "error", message: "请先输入几个想法关键词，再点灯泡扩写。" });
       promptInputRef.current?.focus();
       return;
     }
+    setExpandStartedAt(Date.now());
     setIsExpandingPrompt(true);
     try {
       const res = await fetch("/api/step1-expand", {
@@ -395,10 +499,26 @@ export default function Step1Input() {
         }),
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(data?.message || `AI 扩写失败（HTTP ${res.status}）`);
+        const data = (await res.json().catch(() => null)) as {
+          message?: string;
+          expandProvider?: string;
+          expandBaseUrlHost?: string;
+        } | null;
+        const detail = data?.message || `AI 扩写失败（HTTP ${res.status}）`;
+        const via =
+          data?.expandProvider && data?.expandBaseUrlHost
+            ? `当前扩写网关：${data.expandProvider}（${data.expandBaseUrlHost}）。`
+            : "";
+        const hint = step1ExpandFailureUserHint(detail);
+        const core =
+          hint.includes("火山方舟") || hint.includes("STEP1_EXPAND") ? hint : detail;
+        throw new Error(via ? `${via}${core}` : core);
       }
-      const data = (await res.json()) as { expandedPrompt?: string };
+      const data = (await res.json()) as {
+        expandedPrompt?: string;
+        expandProvider?: string;
+        expandBaseUrlHost?: string;
+      };
       const expandedPrompt = (data.expandedPrompt ?? "").trim();
       if (!expandedPrompt) {
         throw new Error("AI 扩写失败：返回为空。");
@@ -406,16 +526,21 @@ export default function Step1Input() {
       setPrompt(expandedPrompt);
       setStep1ExpansionStrength("standard");
       requestAnimationFrame(() => syncPromptTextareaHeight());
-      emitToast({ type: "success", message: "AI 扩写已生成，可直接点击生成。" });
+      const via = data.expandProvider
+        ? `（${data.expandProvider}${data.expandBaseUrlHost ? ` · ${data.expandBaseUrlHost}` : ""}）`
+        : "";
+      emitToast({ type: "success", message: `AI 扩写已生成${via}，可直接点击生成。` });
     } catch (err) {
       const message = err instanceof Error ? err.message : "AI 扩写失败，请稍后重试。";
       emitToast({ type: "error", message });
     } finally {
       setIsExpandingPrompt(false);
+      setExpandStartedAt(null);
     }
   }, [
     isGenerating,
     isExpandingPrompt,
+    isAnalyzingReference,
     prompt,
     setPrompt,
     setStep1ExpansionStrength,
@@ -435,18 +560,35 @@ export default function Step1Input() {
     return () => ro.disconnect();
   }, [syncPromptTextareaHeight]);
 
-  useEffect(() => {
-    if (isGenerating) setToolbarMenuOpen(null);
-  }, [isGenerating]);
+  const step1FlipClockPhase: Step1FlipClockPhase | null = isGenerating
+    ? "generate"
+    : isAnalyzingReference
+      ? "analyze"
+      : isExpandingPrompt
+        ? "expand"
+        : null;
+
+  const step1AiBusyStartedAt =
+    step1FlipClockPhase === "generate"
+      ? step1StartedAt
+      : step1FlipClockPhase === "analyze"
+        ? analyzeStartedAt
+        : step1FlipClockPhase === "expand"
+          ? expandStartedAt
+          : null;
 
   useEffect(() => {
-    if (step1StartedAt == null) return;
+    if (isGenerating || isExpandingPrompt || isAnalyzingReference) setToolbarMenuOpen(null);
+  }, [isGenerating, isExpandingPrompt, isAnalyzingReference]);
+
+  useEffect(() => {
+    if (step1AiBusyStartedAt == null) return;
     const id = window.setInterval(() => setStep1TimerTick((t) => t + 1), 200);
     return () => window.clearInterval(id);
-  }, [step1StartedAt]);
+  }, [step1AiBusyStartedAt]);
 
-  const step1GenElapsedMs =
-    step1StartedAt != null && isGenerating ? Date.now() - step1StartedAt + step1TimerTick * 0 : 0;
+  const step1AiElapsedMs =
+    step1AiBusyStartedAt != null ? Date.now() - step1AiBusyStartedAt + step1TimerTick * 0 : 0;
 
   const cappyCalmAutoRefHint = useMemo(() => {
     const t = prompt.trim();
@@ -1038,6 +1180,33 @@ export default function Step1Input() {
               ) : null}
             </div>
 
+            <button
+              type="button"
+              disabled={isGenerating || !hasStep1References || isAnalyzingReference}
+              aria-busy={isAnalyzingReference}
+              aria-label="参考图识图"
+              title={
+                !hasStep1References
+                  ? "请先上传参考图"
+                  : isAnalyzingReference
+                    ? "识图中…"
+                    : "根据参考图生成 Banana Pro 可读的同款提示词"
+              }
+              className={
+                isGenerating || !hasStep1References
+                  ? step1CircleBtnClass(false, true)
+                  : isAnalyzingReference
+                    ? STEP1_ANALYZE_EYE_CLASS
+                    : step1CircleBtnClass(hasStep1References, false)
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleReferencePromptAnalyze();
+              }}
+            >
+              <IconStep1Eye className="shrink-0" />
+            </button>
+
             <div className="relative">
               <button
                 type="button"
@@ -1244,9 +1413,9 @@ export default function Step1Input() {
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <button
               type="button"
-              disabled={isGenerating}
+              disabled={isGenerating || isAnalyzingReference}
               aria-busy={isExpandingPrompt}
-              aria-disabled={isExpandingPrompt}
+              aria-disabled={isExpandingPrompt || isAnalyzingReference}
               aria-label="AI 扩写提示词"
               title={isExpandingPrompt ? "AI 扩写中…" : "点击立即 AI 扩写提示词"}
               className={
@@ -1266,13 +1435,16 @@ export default function Step1Input() {
             >
               <IconStep1CreativeLightbulb className="shrink-0" />
             </button>
-            <Step1GenerateButton expandBusy={isExpandingPrompt} />
+            <Step1GenerateButton expandBusy={isExpandingPrompt || isAnalyzingReference} />
           </div>
         </div>
 
-        {isGenerating ? (
+        {step1FlipClockPhase ? (
           <div className="mt-3 flex w-full justify-center">
-            <Step1FlipClock totalSeconds={Math.floor(step1GenElapsedMs / 1000)} />
+            <Step1FlipClock
+              totalSeconds={Math.floor(step1AiElapsedMs / 1000)}
+              phase={step1FlipClockPhase}
+            />
           </div>
         ) : null}
         </div>

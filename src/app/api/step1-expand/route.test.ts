@@ -6,6 +6,12 @@ vi.mock("@/lib/ai/step1PromptAiExpander", () => ({
   expandStep1PromptWithAi: vi.fn().mockResolvedValue({
     expandedPrompt: "expanded test prompt",
     model: "gpt-test",
+    expandConfig: {
+      baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3",
+      model: "gpt-test",
+      providerLabel: "字节火山方舟",
+      baseUrlHost: "ark.cn-beijing.volces.com",
+    },
   }),
 }));
 

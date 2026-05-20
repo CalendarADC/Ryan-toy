@@ -10,6 +10,7 @@ const LABELS: Record<string, string> = {
   mediaDir: "本地图片目录",
   r2Bypass: "跳过云存储 (R2)",
   step1ExpandApiKey: "Step1 AI 扩写密钥",
+  step1ExpandVisionModel: "Step1 参考图识图模型",
 };
 
 type RowTone = "ok" | "warn" | "err";
@@ -152,6 +153,18 @@ export default function DesktopStartupPage() {
               STEP1_EXPAND_API_KEY=你的API密钥
             </code>
             配置后请重启软件。
+          </div>
+        </div>
+      ) : null}
+      {data?.checks.step1ExpandVisionModel === "warn" ? (
+        <div style={{ marginTop: 12, padding: 10, background: "#eff6ff", borderRadius: 8, fontSize: 11 }}>
+          <span style={{ fontWeight: 600, color: "#1e40af" }}>👁 Step1 参考图识图建议单独配置模型</span>
+          <div style={{ marginTop: 4, color: "#1e3a8a" }}>
+            请在 <code style={{ background: "#dbeafe", padding: "1px 4px", borderRadius: 3 }}>.env.local</code> 增加火山方舟已开通的多模态模型，例如：
+            <code style={{ background: "#dbeafe", padding: "2px 6px", borderRadius: 3, display: "block", marginTop: 4 }}>
+              STEP1_EXPAND_VISION_MODEL=doubao-1-5-vision-pro-32k-250115
+            </code>
+            与扩写共用 <code style={{ background: "#dbeafe", padding: "1px 4px", borderRadius: 3 }}>STEP1_EXPAND_API_KEY</code>。
           </div>
         </div>
       ) : null}

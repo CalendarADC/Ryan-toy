@@ -1,7 +1,21 @@
 "use client";
 
+export type Step1FlipClockPhase = "generate" | "expand" | "analyze";
+
+const PHASE_ARIA: Record<Step1FlipClockPhase, string> = {
+  generate: "生成已进行",
+  expand: "AI 扩写已进行",
+  analyze: "识图解析已进行",
+};
+
 /** Step1 翻牌风计时：总秒数 → 分/秒 各两位（最多显示 99:59），数字变化时带 3D 翻动感 */
-export default function Step1FlipClock({ totalSeconds }: { totalSeconds: number }) {
+export default function Step1FlipClock({
+  totalSeconds,
+  phase = "generate",
+}: {
+  totalSeconds: number;
+  phase?: Step1FlipClockPhase;
+}) {
   const capped = Math.min(Math.max(0, totalSeconds), 99 * 60 + 59);
   const m = Math.floor(capped / 60);
   const s = capped % 60;
@@ -17,7 +31,7 @@ export default function Step1FlipClock({ totalSeconds }: { totalSeconds: number 
     <div
       className="step1-flip-clock-root flex items-end gap-2 sm:gap-2.5"
       role="timer"
-      aria-label={`生成已进行 ${label}`}
+      aria-label={`${PHASE_ARIA[phase]} ${label}`}
     >
       <FlipPair tens={m10} ones={m1} unit="分" />
       <Colon />

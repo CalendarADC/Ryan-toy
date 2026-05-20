@@ -17,6 +17,10 @@ This project now supports cloud-first deployment with:
 
 In Vercel project settings, configure:
 
+- `STEP1_EXPAND_API_KEY`（Step1 灯泡扩写与参考图识图共用，须与桌面版一致时改为此处）
+- `STEP1_EXPAND_MODEL`（推荐 `ark-code-latest`，仅用于文本扩写）
+- `STEP1_EXPAND_BASE_URL`（推荐 `https://ark.cn-beijing.volces.com/api/coding/v3`；识图与扩写共用该网关下的 `/chat/completions`，Coding Plan 的 `kimi-k2.6` 等模型勿改到 `/api/v3`；若仍为 `api.modelverse.cn` 则走 Modelverse 而非火山方舟）
+- `STEP1_EXPAND_VISION_MODEL`（Step1 眼睛识图；须在[火山方舟控制台](https://console.volcengine.com/ark)开通多模态模型，如 `doubao-1-5-vision-pro-32k-250115`；未配置时回退 `STEP1_EXPAND_MODEL`，文本模型通常无法识图）
 - `LAOZHANG_API_KEY`
 - `QWEN_API_KEY` (optional fallback)
 - `AUTH_SECRET` (32+ random chars)

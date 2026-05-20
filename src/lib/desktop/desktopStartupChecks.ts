@@ -15,6 +15,7 @@ export type DesktopStartupStatus = {
     mediaDir: CheckStatus;
     r2Bypass: CheckStatus;
     step1ExpandApiKey: CheckStatus;
+    step1ExpandVisionModel: CheckStatus;
   };
   paths: { mediaDir: string | null };
   detail?: string;
@@ -36,6 +37,11 @@ export async function collectDesktopStartupStatus(): Promise<DesktopStartupStatu
     mediaDir: "skipped" as CheckStatus,
     r2Bypass: envEnabled(process.env.DESKTOP_LOCAL_IMAGE_STORAGE) ? ("ok" as CheckStatus) : ("skipped" as CheckStatus),
     step1ExpandApiKey: process.env.STEP1_EXPAND_API_KEY?.trim() ? ("ok" as CheckStatus) : ("warn" as CheckStatus),
+    step1ExpandVisionModel: process.env.STEP1_EXPAND_VISION_MODEL?.trim()
+      ? ("ok" as CheckStatus)
+      : process.env.STEP1_EXPAND_API_KEY?.trim()
+        ? ("warn" as CheckStatus)
+        : ("skipped" as CheckStatus),
   };
 
   if (dbMode === "off") {

@@ -15,6 +15,7 @@ export function isProtectedPath(pathname: string): boolean {
   if (pathname.startsWith("/api/enhance")) return true;
   if (pathname.startsWith("/api/generate-copy")) return true;
   if (pathname.startsWith("/api/step1-expand")) return true;
+  if (pathname.startsWith("/api/step1-reference-prompt")) return true;
   if (pathname.startsWith("/api/tasks")) return true;
   return false;
 }
