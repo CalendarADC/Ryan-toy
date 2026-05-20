@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import {
   expandStep1PromptWithAi,
+  parseStep1ExpandDepth,
   resolveStep1ExpandRuntimeConfig,
+  type Step1ExpandDepth,
 } from "@/lib/ai/step1PromptAiExpander";
 import { inferJewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 import { requireApiActiveUser } from "@/lib/apiAuth";
@@ -12,6 +14,8 @@ export const runtime = "nodejs";
 type Body = {
   prompt: string;
   selectedStyles?: string[];
+  /** fast=关闭思考；deep=开启 Kimi 思考模式 */
+  expandDepth?: Step1ExpandDepth;
 };
 
 export async function POST(req: Request) {
@@ -27,11 +31,13 @@ export async function POST(req: Request) {
     }
 
     const kind = inferJewelryProductKind(prompt);
-    const result = await expandStep1PromptWithAi({ prompt, kind, selectedStyles });
+    const expandDepth = parseStep1ExpandDepth(body.expandDepth);
+    const result = await expandStep1PromptWithAi({ prompt, kind, selectedStyles, expandDepth });
     return NextResponse.json({
       expandedPrompt: result.expandedPrompt,
       model: result.model,
       kind,
+      expandDepth,
       expandProvider: result.expandConfig.providerLabel,
       expandBaseUrlHost: result.expandConfig.baseUrlHost,
     });

@@ -28,7 +28,12 @@ import {
 import Step1PresetMenu from "./Step1PresetMenu";
 import Step1PresetWizard, { type Step1PresetWizardSavePayload } from "./Step1PresetWizard";
 import ImagePreviewModal from "./ImagePreviewModal";
-import { step1ExpandFailureUserHint } from "@/lib/ai/step1PromptAiExpander";
+import {
+  STEP1_EXPAND_DEPTH_STORAGE_KEY,
+  parseStep1ExpandDepth,
+  step1ExpandFailureUserHint,
+  type Step1ExpandDepth,
+} from "@/lib/ai/step1PromptAiExpander";
 
 const MAX_REFERENCE_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_REFERENCE_IMAGE_PAYLOAD_BYTES = 900 * 1024;
@@ -45,7 +50,25 @@ const STEP1_PROMPT_TEXTAREA_MAX_PX = 320;
 const STEP1_EXPAND_BULB_CLASS = `${STEP1_CIRCLE_BTN_BASE} pointer-events-none border-amber-400 bg-amber-50 text-amber-900 shadow-[0_0_18px_rgba(245,158,11,0.5)] ring-2 ring-amber-300/80 ring-offset-1 ring-offset-[var(--create-surface-paper)] animate-[pulse_0.85s_ease-in-out_infinite]`;
 const STEP1_ANALYZE_EYE_CLASS = `${STEP1_CIRCLE_BTN_BASE} pointer-events-none border-sky-400 bg-sky-50 text-sky-800 shadow-[0_0_16px_rgba(56,189,248,0.45)] ring-2 ring-sky-300/80 ring-offset-1 ring-offset-[var(--create-surface-paper)] animate-[pulse_0.85s_ease-in-out_infinite]`;
 
-type Step1ToolbarMenu = "model" | "count" | "style" | "preset";
+type Step1ToolbarMenu = "model" | "count" | "style" | "preset" | "expand";
+
+function loadStep1ExpandDepth(): Step1ExpandDepth {
+  if (typeof window === "undefined") return "deep";
+  try {
+    const raw = localStorage.getItem(STEP1_EXPAND_DEPTH_STORAGE_KEY);
+    return parseStep1ExpandDepth(raw);
+  } catch {
+    return "deep";
+  }
+}
+
+function saveStep1ExpandDepth(depth: Step1ExpandDepth) {
+  try {
+    localStorage.setItem(STEP1_EXPAND_DEPTH_STORAGE_KEY, depth);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 const STEP1_MENU_PANEL =
   "absolute left-0 top-full z-[35] mt-1.5 min-w-[158px] overflow-hidden rounded-xl border border-[rgba(94,111,130,0.18)] bg-[var(--create-surface-paper)] py-1 shadow-lg";
@@ -336,6 +359,7 @@ export default function Step1Input() {
   const [step1TimerTick, setStep1TimerTick] = useState(0);
   const [isExpandingPrompt, setIsExpandingPrompt] = useState(false);
   const [expandStartedAt, setExpandStartedAt] = useState<number | null>(null);
+  const [step1ExpandDepth, setStep1ExpandDepth] = useState<Step1ExpandDepth>("deep");
   const [isAnalyzingReference, setIsAnalyzingReference] = useState(false);
   const [analyzeStartedAt, setAnalyzeStartedAt] = useState<number | null>(null);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
@@ -370,6 +394,7 @@ export default function Step1Input() {
   useEffect(() => {
     setPresets(loadStep1Presets());
     setActivePresetId(loadActivePresetId());
+    setStep1ExpandDepth(loadStep1ExpandDepth());
   }, []);
 
   useEffect(() => {
@@ -493,9 +518,12 @@ export default function Step1Input() {
         method: "POST",
         credentials: "include",
         headers: withDesktopLocalHeader({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           prompt: rawPrompt,
-          selectedStyles: selectedStyles.map(id => STEP1_STYLE_OPTIONS.find(s => s.id === id)?.label || id).filter(Boolean),
+          selectedStyles: selectedStyles
+            .map((id) => STEP1_STYLE_OPTIONS.find((s) => s.id === id)?.label || id)
+            .filter(Boolean),
+          expandDepth: step1ExpandDepth,
         }),
       });
       if (!res.ok) {
@@ -529,7 +557,11 @@ export default function Step1Input() {
       const via = data.expandProvider
         ? `（${data.expandProvider}${data.expandBaseUrlHost ? ` · ${data.expandBaseUrlHost}` : ""}）`
         : "";
-      emitToast({ type: "success", message: `AI 扩写已生成${via}，可直接点击生成。` });
+      const modeLabel = step1ExpandDepth === "fast" ? "快速" : "深度";
+      emitToast({
+        type: "success",
+        message: `AI 扩写已生成（${modeLabel}）${via}，可直接点击生成。`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "AI 扩写失败，请稍后重试。";
       emitToast({ type: "error", message });
@@ -546,7 +578,13 @@ export default function Step1Input() {
     setStep1ExpansionStrength,
     syncPromptTextareaHeight,
     selectedStyles,
+    step1ExpandDepth,
   ]);
+
+  const setStep1ExpandDepthAndPersist = useCallback((depth: Step1ExpandDepth) => {
+    setStep1ExpandDepth(depth);
+    saveStep1ExpandDepth(depth);
+  }, []);
 
   useLayoutEffect(() => {
     syncPromptTextareaHeight();
@@ -1180,32 +1218,39 @@ export default function Step1Input() {
               ) : null}
             </div>
 
-            <button
-              type="button"
-              disabled={isGenerating || !hasStep1References || isAnalyzingReference}
-              aria-busy={isAnalyzingReference}
-              aria-label="参考图识图"
+            <span
+              className={[
+                "inline-flex shrink-0",
+                isGenerating || !hasStep1References || isAnalyzingReference
+                  ? "cursor-not-allowed"
+                  : "cursor-pointer",
+              ].join(" ")}
               title={
-                !hasStep1References
-                  ? "请先上传参考图"
-                  : isAnalyzingReference
-                    ? "识图中…"
-                    : "根据参考图生成 Banana Pro 可读的同款提示词"
+                isAnalyzingReference
+                  ? "识图中…"
+                  : "解析参考图的提示词，最多3张"
               }
-              className={
-                isGenerating || !hasStep1References
-                  ? step1CircleBtnClass(false, true)
-                  : isAnalyzingReference
-                    ? STEP1_ANALYZE_EYE_CLASS
-                    : step1CircleBtnClass(hasStep1References, false)
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleReferencePromptAnalyze();
-              }}
             >
-              <IconStep1Eye className="shrink-0" />
-            </button>
+              <button
+                type="button"
+                disabled={isGenerating || !hasStep1References || isAnalyzingReference}
+                aria-busy={isAnalyzingReference}
+                aria-label="解析参考图的提示词，最多3张"
+                className={
+                  isGenerating || !hasStep1References
+                    ? step1CircleBtnClass(false, true)
+                    : isAnalyzingReference
+                      ? STEP1_ANALYZE_EYE_CLASS
+                      : step1CircleBtnClass(hasStep1References, false)
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleReferencePromptAnalyze();
+                }}
+              >
+                <IconStep1Eye className="shrink-0" />
+              </button>
+            </span>
 
             <div className="relative">
               <button
@@ -1411,30 +1456,125 @@ export default function Step1Input() {
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              disabled={isGenerating || isAnalyzingReference}
-              aria-busy={isExpandingPrompt}
-              aria-disabled={isExpandingPrompt || isAnalyzingReference}
-              aria-label="AI 扩写提示词"
-              title={isExpandingPrompt ? "AI 扩写中…" : "点击立即 AI 扩写提示词"}
-              className={
-                isGenerating
-                  ? step1CircleBtnClass(false, true)
-                  : isExpandingPrompt
-                    ? STEP1_EXPAND_BULB_CLASS
-                    : step1CircleBtnClass(false, false)
-              }
-              onKeyDown={(e) => {
-                if (isExpandingPrompt && (e.key === " " || e.key === "Enter")) e.preventDefault();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleInstantAiExpand();
-              }}
-            >
-              <IconStep1CreativeLightbulb className="shrink-0" />
-            </button>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                disabled={isGenerating || isAnalyzingReference}
+                aria-busy={isExpandingPrompt}
+                aria-label={
+                  step1ExpandDepth === "fast"
+                    ? "AI 快速扩写提示词"
+                    : "AI 深度扩写提示词（思考模式）"
+                }
+                title={
+                  isExpandingPrompt
+                    ? "AI 扩写中…"
+                    : step1ExpandDepth === "fast"
+                      ? "快速扩写（关闭思考，更快）"
+                      : "深度扩写（Kimi 思考模式，质量更好）"
+                }
+                className={
+                  isGenerating
+                    ? step1CircleBtnClass(false, true)
+                    : isExpandingPrompt
+                      ? STEP1_EXPAND_BULB_CLASS
+                      : step1CircleBtnClass(step1ExpandDepth === "deep", false)
+                }
+                onKeyDown={(e) => {
+                  if (isExpandingPrompt && (e.key === " " || e.key === "Enter")) e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleInstantAiExpand();
+                }}
+              >
+                <IconStep1CreativeLightbulb className="shrink-0" />
+              </button>
+              <button
+                type="button"
+                disabled={isGenerating || isExpandingPrompt || isAnalyzingReference}
+                aria-haspopup="listbox"
+                aria-expanded={toolbarMenuOpen === "expand"}
+                aria-label="选择扩写模式：快速或深度"
+                title="切换扩写模式：快速 / 深度"
+                className={`absolute -bottom-0.5 -right-0.5 z-[1] flex h-3.5 w-3.5 items-center justify-center rounded-full border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--create-surface-paper)] disabled:pointer-events-none disabled:opacity-60 ${
+                  step1ExpandDepth === "deep"
+                    ? "border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200"
+                    : "border-[rgba(94,111,130,0.22)] bg-[var(--create-surface-paper)] text-[#454038] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_14%,var(--create-surface-paper))]"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setToolbarMenuOpen((m) => (m === "expand" ? null : "expand"));
+                }}
+              >
+                <svg
+                  width={10}
+                  height={10}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="pointer-events-none shrink-0"
+                  aria-hidden
+                >
+                  <path
+                    d="M6 9l6 6 6-6"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              {toolbarMenuOpen === "expand" &&
+              !isGenerating &&
+              !isExpandingPrompt &&
+              !isAnalyzingReference ? (
+                <div
+                  role="listbox"
+                  aria-label="扩写模式"
+                  className={`${STEP1_MENU_PANEL} right-0 left-auto min-w-[168px]`}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={step1ExpandDepth === "fast"}
+                    className={`block w-full px-3 py-2 text-left text-sm transition ${
+                      step1ExpandDepth === "fast"
+                        ? "bg-amber-50 font-semibold text-amber-900"
+                        : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
+                    }`}
+                    onClick={() => {
+                      setStep1ExpandDepthAndPersist("fast");
+                      setToolbarMenuOpen(null);
+                    }}
+                  >
+                    快速
+                    <span className="mt-0.5 block text-xs font-normal text-[#6b5f52]">
+                      关闭思考，更快
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={step1ExpandDepth === "deep"}
+                    className={`block w-full px-3 py-2 text-left text-sm transition ${
+                      step1ExpandDepth === "deep"
+                        ? "bg-amber-50 font-semibold text-amber-900"
+                        : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
+                    }`}
+                    onClick={() => {
+                      setStep1ExpandDepthAndPersist("deep");
+                      setToolbarMenuOpen(null);
+                    }}
+                  >
+                    深度
+                    <span className="mt-0.5 block text-xs font-normal text-[#6b5f52]">
+                      Kimi 思考模式，质量更好
+                    </span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <Step1GenerateButton expandBusy={isExpandingPrompt || isAnalyzingReference} />
           </div>
         </div>

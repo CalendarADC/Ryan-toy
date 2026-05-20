@@ -3,18 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   analyzeStep1ReferencesWithAi,
   buildStep1ExpandDisplayBackgroundClause,
+  extractStep1ExpandFinalPrompt,
   finalizeStep1ExpandedPrompt,
   normalizeStep1ExpandedPromptDisplayBackground,
   normalizeStep1ExpandedZirconInlay,
   resolveStep1ExpandChatCompletionsUrl,
   sanitizeStep1ReferenceImageUrls,
   sanitizeStep1ExpandedInlayMaterials,
+  userPromptAllowsPaveInlay,
   step1ExpandFailureUserHint,
   STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES,
-  STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE,
-  STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE,
   userPromptAllowsEnamelOrLiuli,
   userPromptSpecifiesNonZirconGemstone,
+  parseStep1ExpandDepth,
+  step1ExpandDepthUsesThinking,
+  isKimiStep1ExpandModel,
 } from "./step1PromptAiExpander";
 
 describe("normalizeStep1ExpandedPromptDisplayBackground", () => {
@@ -54,50 +57,93 @@ describe("sanitizeStep1ExpandedInlayMaterials", () => {
     expect(sanitizeStep1ExpandedInlayMaterials(raw, "复古珐琅琉璃戒指")).toBe(raw);
   });
 
-  it("finalize applies background, enamel, and zircon delegation", () => {
-    const raw = "设计戒指。爪镶白锆主石。展示背景：丝绒台面。";
+  it("finalize maps口语色名 to catalog zircon names", () => {
+    const raw = "设计戒指。爪镶淡粉锆石主石，密镶香槟色小锆点缀。展示背景：丝绒台面。";
     const out = finalizeStep1ExpandedPrompt(raw, "ring", "花朵戒指");
-    expect(out).not.toMatch(/琉璃|丝绒|白锆/);
+    expect(out).not.toMatch(/琉璃|丝绒|密镶/);
+    expect(out).toContain("粉红锆");
+    expect(out).toContain("香槟锆");
+    expect(out).toContain("钉镶");
     expect(out).toContain("展示背景：根据设计，把戒指放到你认为合适的展示背景里");
-    expect(out).toMatch(/你认为颜色符合设计的锆石/);
+  });
+
+  it("removes 密镶 from expanded inlay craft unless user requested", () => {
+    const raw = "戒面爪镶粉红锆，叶脉密镶白锆点缀。";
+    const out = sanitizeStep1ExpandedInlayMaterials(raw, "花朵戒指");
+    expect(out).not.toMatch(/密镶/);
+    expect(out).toContain("钉镶");
+  });
+
+  it("keeps 密镶 when user prompt explicitly requests", () => {
+    expect(userPromptAllowsPaveInlay("复古密镶排钻戒指")).toBe(true);
+    const raw = "叶脉密镶白锆点缀。";
+    expect(sanitizeStep1ExpandedInlayMaterials(raw, "复古密镶排钻戒指")).toBe(raw);
   });
 });
 
 describe("normalizeStep1ExpandedZirconInlay", () => {
-  it("strips catalog zircon color names to design-matched delegation", () => {
-    const raw = "爪镶香槟锆，密镶深海蓝锆点缀。";
+  it("maps口语色名 to catalog names", () => {
+    const raw = "爪镶香槟色锆石主石，钉镶深海蓝小锆点缀。";
     const out = normalizeStep1ExpandedZirconInlay(raw, "向日葵戒指");
-    expect(out).not.toMatch(/香槟锆|深海蓝锆/);
-    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
+    expect(out).toContain("香槟锆");
+    expect(out).toContain("深海蓝锆");
   });
 
-  it("rewrites common gemstones to zircon delegation when user did not specify", () => {
-    const raw = "爪镶紫水晶，密镶钻石点缀。";
+  it("keeps catalog color names as-is", () => {
+    const raw = "爪镶粉红锆主石，钉镶白锆点缀。";
     const out = normalizeStep1ExpandedZirconInlay(raw, "向日葵戒指");
-    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
-    expect(out).not.toMatch(/紫水晶|钻石|白锆/);
+    expect(out).toContain("粉红锆");
+    expect(out).toContain("白锆");
   });
 
-  it("keeps diamond when user prompt explicitly requests", () => {
+  it("removes stacked legacy delegation phrases", () => {
+    const raw =
+      "中心镶嵌你认为颜色符合整体设计的你认为颜色符合设计的锆石，边缘密镶你认为颜色符合整体意境的你认为颜色符合设计的锆石。";
+    const out = finalizeStep1ExpandedPrompt(raw, "pendant", "天使吊坠");
+    expect(out).not.toMatch(/你认为颜色符合|密镶/);
+  });
+
+  it("keeps diamond when present in expand text", () => {
     const raw = "爪镶钻石主石。";
     expect(userPromptSpecifiesNonZirconGemstone("复古钻石戒指")).toBe(true);
     expect(normalizeStep1ExpandedZirconInlay(raw, "复古钻石戒指")).toContain("钻石");
   });
 
-  it("replaces bare 锆石 with design-matched stone phrase", () => {
-    const out = normalizeStep1ExpandedZirconInlay("包镶锆石主石。", "银戒");
-    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
-    expect(out).not.toMatch(/包镶锆石主石/);
-  });
-
-  it("appends design-matched inlay phrase when镶嵌 mentioned but no zircon wording", () => {
-    const out = normalizeStep1ExpandedZirconInlay("戒面采用爪镶工艺。", "花朵戒指");
-    expect(out).toContain(STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE);
-  });
-
-  it("catalog list still defined for post-process stripping", () => {
+  it("catalog list still defined for compatibility", () => {
     expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES).toContain("白锆");
     expect(STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES.length).toBeGreaterThan(20);
+  });
+});
+
+describe("extractStep1ExpandFinalPrompt", () => {
+  it("strips reasoning trace and keeps prompt from 设计一枚", () => {
+    const raw = `用户要求我作为珠宝概念提示词扩展师。我需要严格遵守规则。
+我决定开头写：设计一枚S925银吊坠，洛可可风格融合法式曲线风格，设计主体是小丘比特与玫瑰。爪镶香槟锆主石。
+展示背景：根据设计，把吊坠放到你认为合适的展示背景里
+后续不应保留的思考文字。`;
+    const out = extractStep1ExpandFinalPrompt(raw, "pendant");
+    expect(out.startsWith("设计一枚S925银吊坠")).toBe(true);
+    expect(out).toContain("香槟锆");
+    expect(out).not.toMatch(/用户要求|我决定/);
+    expect(out).toContain("展示背景：根据设计，把吊坠放到你认为合适的展示背景里");
+  });
+});
+
+describe("Step1ExpandDepth", () => {
+  it("parseStep1ExpandDepth defaults to deep", () => {
+    expect(parseStep1ExpandDepth(undefined)).toBe("deep");
+    expect(parseStep1ExpandDepth("fast")).toBe("fast");
+    expect(parseStep1ExpandDepth("bogus")).toBe("deep");
+  });
+
+  it("step1ExpandDepthUsesThinking only for deep", () => {
+    expect(step1ExpandDepthUsesThinking("fast")).toBe(false);
+    expect(step1ExpandDepthUsesThinking("deep")).toBe(true);
+  });
+
+  it("isKimiStep1ExpandModel detects kimi models", () => {
+    expect(isKimiStep1ExpandModel("kimi-k2.6")).toBe(true);
+    expect(isKimiStep1ExpandModel("doubao-1-5-vision-pro")).toBe(false);
   });
 });
 

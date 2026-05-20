@@ -6,10 +6,28 @@ import {
   STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
 } from "@/lib/ai/jewelrySoftLimits";
 
+/** 灯泡扩写：快速=关闭 Kimi 思考；深度=开启思考（质量更好、更慢） */
+export type Step1ExpandDepth = "fast" | "deep";
+
+export const STEP1_EXPAND_DEPTH_STORAGE_KEY = "gemmuse.step1ExpandDepth";
+
+export function parseStep1ExpandDepth(input: unknown): Step1ExpandDepth {
+  return input === "fast" ? "fast" : "deep";
+}
+
+export function step1ExpandDepthUsesThinking(depth: Step1ExpandDepth): boolean {
+  return depth === "deep";
+}
+
+export function isKimiStep1ExpandModel(model: string): boolean {
+  return /kimi/i.test(model);
+}
+
 type ExpandArgs = {
   prompt: string;
   kind: JewelryProductKind;
   selectedStyles?: string[];
+  expandDepth?: Step1ExpandDepth;
 };
 
 export const STEP1_EXPAND_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
@@ -92,12 +110,76 @@ type OpenAiChatResponse = {
   };
 };
 
+const EXPAND_REASONING_TRACE_RE =
+  /用户要求|我需要严格遵守|规则说|原始提示|反同质化规则|我决定|看例子|为了安全|这是针对|禁止输出思考|品类（推断）/i;
+
+/** 从混有思考过程的回复中截取最终扩写正文 */
+export function extractStep1ExpandFinalPrompt(
+  raw: string,
+  kind: JewelryProductKind
+): string {
+  const text = raw.trim();
+  if (!text) return text;
+
+  const obj = step1ExpandDesignObjectZh(kind);
+  const startRe = new RegExp(`设计一枚S925银${obj}`);
+  const startIdx = text.search(startRe);
+  if (startIdx >= 0) {
+    let slice = text.slice(startIdx).trim();
+    const bgClause = buildStep1ExpandDisplayBackgroundClause(kind);
+    const bgLine = `展示背景：${bgClause}`;
+    const bgIdx = slice.indexOf(bgLine);
+    if (bgIdx >= 0) {
+      slice = slice.slice(0, bgIdx + bgLine.length).trim();
+    }
+    return slice;
+  }
+
+  if (EXPAND_REASONING_TRACE_RE.test(text)) {
+    return "";
+  }
+  return text;
+}
+
+function looksLikeExpandReasoningTrace(text: string): boolean {
+  if (!text.trim()) return false;
+  if (/设计一枚S925银(?:戒指|吊坠)/.test(text)) {
+    return EXPAND_REASONING_TRACE_RE.test(text.slice(0, Math.min(400, text.length)));
+  }
+  return EXPAND_REASONING_TRACE_RE.test(text);
+}
+
 function extractAssistantText(
-  message?: { content?: string; reasoning_content?: string } | null
+  message?: { content?: string; reasoning_content?: string } | null,
+  kind?: JewelryProductKind,
+  options?: { expandThinkingEnabled?: boolean }
 ): string {
   const content = message?.content?.trim() ?? "";
-  if (content) return content;
-  return message?.reasoning_content?.trim() ?? "";
+  const reasoning = message?.reasoning_content?.trim() ?? "";
+
+  const pick = (candidate: string) => {
+    if (!candidate) return "";
+    if (kind) {
+      const extracted = extractStep1ExpandFinalPrompt(candidate, kind);
+      if (extracted) return extracted;
+    }
+    return candidate;
+  };
+
+  // Kimi 思考模式：推理在 reasoning_content，最终扩写正文应在 content，勿把推理链写入结果
+  if (options?.expandThinkingEnabled) {
+    if (content) return pick(content);
+    return "";
+  }
+
+  const contentLooksReasoning = looksLikeExpandReasoningTrace(content);
+  const reasoningLooksReasoning = looksLikeExpandReasoningTrace(reasoning);
+
+  if (content && !contentLooksReasoning) return pick(content);
+  if (reasoning && !reasoningLooksReasoning) return pick(reasoning);
+  if (content && /设计一枚S925银(?:戒指|吊坠)/.test(content)) return pick(content);
+  if (reasoning && /设计一枚S925银(?:戒指|吊坠)/.test(reasoning)) return pick(reasoning);
+  return pick(content) || pick(reasoning);
 }
 
 /** 识图走 Chat Completions（多模态）；Coding Plan 的 kimi 等模型仅在 coding/v3 下可用，勿改到 /api/v3 */
@@ -279,8 +361,8 @@ export function normalizeStep1ExpandedPromptDisplayBackground(
 }
 
 /**
- * 扩写阶段不写具体锆石色号；配色交给后续生图模型。
- * 下列色名仅用于后处理：剔除模型擅自写死的商品色名。
+ * Step1 扩写 / 生图可用的锆石商品色名（历史上传色板）。
+ * 扩写须从该列表选色，由 AI 根据设计自动搭配，不得自造列表外色名。
  */
 export const STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES = [
   "粉红锆",
@@ -317,10 +399,14 @@ export const STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES = [
 /** @deprecated 仅兼容旧测试引用 */
 export const STEP1_EXPAND_ZIRCON_COLOR_OPTIONS = STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES;
 
-/** 扩写输出中镶嵌配石的统一表述（不写死色号） */
+export function formatStep1ZirconCatalogForPrompt(): string {
+  return STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES.join("、");
+}
+
+/** 扩写输出中镶嵌配石的统一表述（旧版，仅兼容测试） */
 export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE = "镶嵌你认为颜色符合设计的锆石";
 
-/** 镶口工艺后接的锆石表述（如「爪镶你认为颜色符合设计的锆石」） */
+/** @deprecated 旧版委托句式 */
 export const STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE = "你认为颜色符合设计的锆石";
 
 /** 用户原文是否指定非锆石类主配石（此时可不强制改写成锆石） */
@@ -331,37 +417,46 @@ export function userPromptSpecifiesNonZirconGemstone(userPrompt: string): boolea
   return NON_ZIRCON_GEM_IN_USER_PROMPT_RE.test(userPrompt);
 }
 
-/** 将扩写中的非锆石配石名改为「由生图模型配色」的锆石表述（用户未指定其它宝石时） */
-const GEM_TO_ZIRCON_DELEGATION: Array<[RegExp, string]> = [
-  [/紫水晶|黄水晶|白水晶|水晶/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE],
-  [/钻石/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE],
-  [/红宝石|蓝宝石|祖母绿|海蓝宝|坦桑石|玛瑙|碧玺|石榴石|橄榄石|尖晶石|刚玉/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE],
-  [/宝石/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE],
+/** 旧版「由生图配色」委托句式（仅用于后处理清除叠句残留） */
+const LEGACY_ZIRCON_DELEGATION_RE =
+  /(?:镶嵌)?(?:你认为颜色符合(?:整体(?:设计|意境)的)?)+(?:你认为颜色符合(?:整体)?设计的)?锆石|镶嵌你认为(?:符合设计的锆石颜色|颜色符合设计的锆石)|你认为符合设计的锆石/g;
+
+/** 口语 stem（不在色板字面中）→ 商品色名 */
+const ZIRCON_STEM_ALIASES: Array<[string, string]> = [
+  ["透明无色", "白锆"],
+  ["无色透明", "白锆"],
+  ["淡粉", "粉红锆"],
+  ["深粉", "粉红锆"],
+  ["玫瑰金", "香槟锆"],
+  ["烟灰", "黑锆"],
+  ["炭灰", "黑锆"],
 ];
 
-const ZIRCON_DELEGATION_ALREADY_RE =
-  /你认为颜色符合(?:整体)?设计的锆石|镶嵌你认为颜色符合设计的锆石|你认为符合设计的锆石|镶嵌你认为符合设计的锆石颜色|符合设计的锆石颜色/;
-
-function expandedTextHasZirconDelegation(text: string): boolean {
-  return ZIRCON_DELEGATION_ALREADY_RE.test(text);
-}
-
-function collapseZirconDelegationPhrases(text: string): string {
+function normalizeZirconMentionsToCatalogNames(text: string): string {
   let out = text;
-  out = out.replace(
-    new RegExp(
-      `(${STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE}[，、]?|${STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE}[，、]?){2,}`,
-      "g"
-    ),
-    STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE
+  const aliases = [...ZIRCON_STEM_ALIASES].sort((a, b) => b[0].length - a[0].length);
+  for (const [stem, catalog] of aliases) {
+    out = out.replace(
+      new RegExp(`${stem}(?:色)?(?:的)?(?:小|大)?(?:锆石|锆)`, "g"),
+      catalog
+    );
+  }
+
+  const names = [...STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES].sort(
+    (a, b) => b.length - a.length
   );
-  out = out.replace(/[，、]{2,}/g, "，");
-  out = out.replace(/[，、]\s*([。；\n])/g, "$1");
-  return out.trim();
+  for (const name of names) {
+    const stem = name.replace(/锆$/u, "");
+    out = out.replace(
+      new RegExp(`${stem}(?:色)?(?:的)?(?:小|大)?(?:锆石|锆)`, "g"),
+      name
+    );
+  }
+  return out;
 }
 
 /**
- * AI 扩写后处理：配石统一为锆石，禁止写死商品色号，改为「镶嵌你认为颜色符合设计的锆石」交由生图模型配色。
+ * AI 扩写后处理：配石色名须落在商品色板内；口语色名映射到目录名，清除旧委托句式叠句。
  */
 export function normalizeStep1ExpandedZirconInlay(
   expanded: string,
@@ -371,30 +466,17 @@ export function normalizeStep1ExpandedZirconInlay(
     return expanded.trim();
   }
 
-  let text = expanded
-    .replace(/镶嵌你认为符合设计的锆石颜色/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE)
-    .replace(/你认为符合设计的锆石/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
+  let text = expanded.trim();
+  text = text.replace(LEGACY_ZIRCON_DELEGATION_RE, "");
+  text = normalizeZirconMentionsToCatalogNames(text);
 
-  for (const c of STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES) {
-    text = text.replaceAll(`${c}石`, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
-    text = text.replaceAll(c, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
+  for (const name of STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES) {
+    text = text.replaceAll(`${name}石`, name);
   }
 
-  for (const [re, replacement] of GEM_TO_ZIRCON_DELEGATION) {
-    text = text.replace(re, replacement);
-  }
-
-  text = text.replace(/锆石/g, STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_STONE);
-
-  if (
-    /镶嵌|镶口|配石|爪镶|包镶|钉镶|密镶/.test(text) &&
-    !expandedTextHasZirconDelegation(text)
-  ) {
-    const trimmed = text.replace(/[。！？.!?]\s*$/, "");
-    text = `${trimmed}，${STEP1_EXPAND_ZIRCON_DESIGN_MATCHED_PHRASE}。`;
-  }
-
-  return collapseZirconDelegationPhrases(text);
+  text = text.replace(/[，、]{2,}/g, "，");
+  text = text.replace(/[，、]\s*([。；\n])/g, "$1");
+  return text.trim();
 }
 
 /** 用户原文是否明确要求珐琅/琉璃类材质 */
@@ -408,22 +490,36 @@ export function userPromptAllowsEnamelOrLiuli(userPrompt: string): boolean {
 const ENAMEL_LIULI_IN_EXPANDED_RE =
   /珐琅|琉璃|掐丝珐琅|搪瓷珐琅|法琅|烧蓝|琉璃质|琉璃材质|enamel|cloisonn[eé]|liuli/gi;
 
+/** 扩写禁止出现的镶嵌工艺（密镶 / 微镶 / 排镶等） */
+const PAVE_INLAY_IN_EXPANDED_RE = /密镶|微镶|排镶/g;
+const PAVE_INLAY_IN_USER_PROMPT_RE = /密镶|微镶|排镶/;
+
+/** 用户原文是否明确要求密镶类工艺 */
+export function userPromptAllowsPaveInlay(userPrompt: string): boolean {
+  return PAVE_INLAY_IN_USER_PROMPT_RE.test(userPrompt);
+}
+
 /**
- * AI 扩写后处理：镶嵌相关描述禁止珐琅/琉璃（用户原文已要求时保留）。
+ * AI 扩写后处理：镶嵌相关描述禁止珐琅/琉璃（用户原文已要求时保留）；禁止密镶（用户原文已要求时保留）。
  */
 export function sanitizeStep1ExpandedInlayMaterials(
   expanded: string,
   userPrompt: string
 ): string {
-  if (userPromptAllowsEnamelOrLiuli(userPrompt)) return expanded;
-  let text = expanded.replace(ENAMEL_LIULI_IN_EXPANDED_RE, "");
+  let text = expanded;
+  if (!userPromptAllowsEnamelOrLiuli(userPrompt)) {
+    text = text.replace(ENAMEL_LIULI_IN_EXPANDED_RE, "");
+  }
+  if (!userPromptAllowsPaveInlay(userPrompt)) {
+    text = text.replace(PAVE_INLAY_IN_EXPANDED_RE, "钉镶");
+  }
   text = text.replace(/[，、]{2,}/g, "，");
   text = text.replace(/[，、]\s*([。；\n])/g, "$1");
   text = text.replace(/\s{2,}/g, " ");
   return text.trim();
 }
 
-/** 扩写结果统一后处理（展示背景 + 镶嵌禁珐琅琉璃 + 锆石色名） */
+/** 扩写结果统一后处理（展示背景 + 镶嵌禁珐琅琉璃 + 清除旧版锆石委托句式） */
 export function finalizeStep1ExpandedPrompt(
   expanded: string,
   kind: JewelryProductKind,
@@ -484,13 +580,23 @@ export async function postStep1ExpandChat(args: {
   messages: Step1ChatMessage[];
   temperature?: number;
   errorLabel?: string;
+  maxTokens?: number;
+  /** Kimi K2：true=思考模式（质量更好）；false=快速模式 */
+  enableThinking?: boolean;
+  expandKind?: JewelryProductKind;
 }): Promise<string> {
   const apiKey = args.apiKey;
   const label = args.errorLabel ?? "Step1 AI";
-  const payload = {
+  const payload: Record<string, unknown> = {
     model: args.model,
     temperature: args.temperature ?? 0.85,
     messages: args.messages,
+    ...(typeof args.maxTokens === "number" ? { max_tokens: args.maxTokens } : {}),
+    ...(typeof args.enableThinking === "boolean" && isKimiStep1ExpandModel(args.model)
+      ? {
+          thinking: { type: args.enableThinking ? "enabled" : "disabled" },
+        }
+      : {}),
   };
   const maxAttempts = 3;
   const backoffMs = [0, 900, 2200];
@@ -524,7 +630,9 @@ export async function postStep1ExpandChat(args: {
       let content = "";
       try {
         const data = JSON.parse(text) as OpenAiChatResponse;
-        content = extractAssistantText(data?.choices?.[0]?.message);
+        content = extractAssistantText(data?.choices?.[0]?.message, args.expandKind, {
+          expandThinkingEnabled: args.enableThinking,
+        });
       } catch {
         content = text.trim();
       }
@@ -610,6 +718,11 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
   const system = [
     "You are a senior jewelry concept prompt expander for Chinese-speaking users.",
     "",
+    "【输出禁令 — 最高优先级】",
+    "你可以在内部思考，但对外只输出一段可直接复制到生图框的最终中文提示词正文（写入 message.content）。",
+    "禁止在最终正文中输出思考过程、规则复述、自问自答、分析草稿、英文、编号列表、前后解释。",
+    "禁止在最终正文中出现「用户要求」「我需要」「规则说」「我决定」等元叙述。",
+    "",
     "LANGUAGE (HARD): The entire expanded output MUST be written in Simplified Chinese (简体中文).",
     "Do not write the expanded prompt primarily in English. You may keep short unavoidable tokens (e.g. 925, AU750, 4K, brand codes) inline where natural.",
     "",
@@ -620,9 +733,20 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "",
     "例子：用户输入「向日葵戒指」选择哥特风+维多利亚哀悼风 → 开头必须为：设计一枚S925银戒指，哥特风融合维多利亚哀悼风格，设计主体是向日葵",
     "",
-    "Task: 将用户输入改写为一段可直接用于 AI 生图的、精炼的简体中文提示词（电商主图级清晰度）。",
+    "Task: 将用户输入改写为一段可直接用于 AI 生图的简体中文提示词（电商主图级清晰度）。",
     "保持用户原始主题与意图不变；不要擅自更换品类（戒指/吊坠等以用户与品类推断为准）。",
-    "补充珠宝专业表达：材质、工艺、可生产性、镶嵌逻辑、轮廓与光影，但避免空洞堆砌。",
+    "风格词（如洛可可/哥特）仅作为特征来源，不得只输出风格标签口号；必须转写为具体可见的结构、线条与工艺表达。",
+    "",
+    "=== 反同质化规则（硬约束，必须全部满足）===",
+    "1) 不改变品类与主体元素。",
+    "2) 只选一个设计主命题并贯穿（说明最想被看见什么、为此牺牲什么）。",
+    "3) 明确外轮廓语法：对称性、重心、开口或延展方向。",
+    "4) 明确镶嵌架构与石位节奏：镶口类型、主辅石关系、石位节奏。",
+    "5) 主动规避常见模板，并声明至少两项与常规解法不同。",
+    "",
+    "=== 反同质化规则（强约束，每次命中 2-3 条）===",
+    "6) 体块比例系统；7) 层级与空间结构；8) 线条节奏与转折逻辑；9) 负空间与留白策略；10) 产品工艺说明（镜抛/拉丝/氧化/锤纹等，可全表面同工艺但需写清意图）。",
+    "输出长度控制：正文建议 6-8 句，约 220-320 字；写完即结束，不要追加解释。",
     "",
     "HARD OUTPUT RULE — SINGLE HERO PRODUCT ONLY:",
     "扩写正文必须只描述「一件」实体珠宝、「一张」主图画面；禁止一图多件、排戒展示、对比组图、系列陈列等。",
@@ -637,15 +761,15 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "",
     "=== 镶嵌材质（硬性）===",
     "凡涉及镶嵌、镶口、填色、装饰面时：禁止出现「珐琅」「琉璃」及同义表达（掐丝珐琅、烧蓝、搪瓷釉、法琅、enamel、liuli 等）。",
-    "优先改写为可量产的金属镶口工艺：爪镶、包镶、钉镶、珠镶、密镶、金属托镶、宝石镶口等。",
-    "仅当用户原始提示中已明确写出珐琅或琉璃时，才可保留该类材质；否则一律不得写入扩写结果。",
+    "禁止出现「密镶」「微镶」「排镶」及同义密排镶工艺；一律改用爪镶、包镶、钉镶、珠镶、金属托镶、宝石镶口等可量产工艺表述。",
+    "仅当用户原始提示中已明确写出珐琅、琉璃或密镶时，才可保留对应表述；否则一律不得写入扩写结果。",
     "",
-    "=== 宝石镶嵌配石（硬性 — 材质锆石，颜色交给生图）===",
-    "配石材质以「锆石」为主（可量产金属镶口 + 锆石）。扩写阶段禁止写明具体锆石色号、商品色名或色板名（如粉红锆、白锆、香槟锆、深海蓝锆、纳米蓝锆等）；禁止擅自写钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠等作为主配石，除非用户原文已明确指定。",
-    "凡描述镶嵌、配石、点缀石、彩宝镶口时：不得写具体颜色形容词锁定配石（如「红色锆石」「白色主石」「蓝色点缀」）；一律改写为「镶嵌你认为颜色符合设计的锆石」，或等价表述（如「爪镶你认为颜色符合整体设计的锆石」「密镶你认为颜色符合本款主题与风格的锆石」）。",
-    "具体锆石色泽由后续 AI 生图模型根据设计主题、风格、金属色（如 S925 银）与整体意境自动匹配，扩写只交代材质与工艺，不替生图模型选色。",
-    "书写示例：戒面爪镶你认为颜色符合设计的锆石；叶脉间密镶你认为颜色符合整体意境的锆石；包镶点缀，镶嵌你认为颜色符合设计的锆石。",
-    "仅当用户原始提示已明确指定非锆石类宝石或明确颜色要求时，才可保留用户意图中的相关表述。",
+    "=== 宝石镶嵌配石（须在商品色板内选色，由你自动搭配）===",
+    `可用锆石商品色名仅限以下列表（不得自造列表外色名）：${formatStep1ZirconCatalogForPrompt()}。`,
+    "主石与点缀石须从该列表中各选 1 个（或主石 1 个 + 点缀 1–2 个）协调色号，并写全称（如「爪镶香槟锆主石，叶脉钉镶深海蓝锆点缀」）。",
+    "具体选哪几个色号由你根据设计主题、风格、金属色（如 S925 银）与整体意境自动决定，但名称必须来自上述列表。",
+    "禁止使用「镶嵌你认为颜色符合设计的锆石」等委托式空泛句式；禁止写列表外的颜色名（如淡粉锆石、玫瑰金锆等，应写「粉红锆」「香槟锆」等目录名）。",
+    "禁止擅自将主配石改成钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠等，除非用户原文已明确指定。",
     "",
     ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "ultra-thin"
       ? [
@@ -671,18 +795,30 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     args.prompt.trim(),
   ].filter(Boolean).join("\n");
 
+  const expandDepth = parseStep1ExpandDepth(args.expandDepth);
+  const enableThinking = step1ExpandDepthUsesThinking(expandDepth);
   const url = `${baseUrl}/chat/completions`;
-  const content = await postStep1ExpandChat({
+  let content = await postStep1ExpandChat({
     url,
     apiKey,
     model,
     temperature: 0.85,
+    maxTokens: enableThinking ? 4096 : 2048,
+    enableThinking,
+    expandKind: args.kind,
     errorLabel: "Step1 AI 改写",
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
   });
+
+  content = extractStep1ExpandFinalPrompt(content, args.kind);
+  if (!content || !/^设计一枚S925银(?:戒指|吊坠)/.test(content)) {
+    throw new Error(
+      "Step1 AI 改写返回了思考过程而非最终提示词。请重试；若持续出现可检查 STEP1_EXPAND_MODEL 是否启用了思考模式。"
+    );
+  }
 
   return {
     expandedPrompt: finalizeStep1ExpandedPrompt(content, args.kind, args.prompt),
