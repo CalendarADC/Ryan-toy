@@ -1,6 +1,9 @@
 import {
   type JewelryProductKind,
-  userWantsDelicateThinWomensRing,
+  getRingMotifShankScaleTier,
+  ensureStep1ExpandedRingMotifShankPhrase,
+  STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
+  STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
 } from "@/lib/ai/jewelrySoftLimits";
 
 type ExpandArgs = {
@@ -277,13 +280,18 @@ export function finalizeStep1ExpandedPrompt(
   kind: JewelryProductKind,
   userPrompt: string
 ): string {
-  return normalizeStep1ExpandedZirconInlay(
+  let text = normalizeStep1ExpandedZirconInlay(
     sanitizeStep1ExpandedInlayMaterials(
       normalizeStep1ExpandedPromptDisplayBackground(expanded, kind),
       userPrompt
     ),
     userPrompt
   );
+  if (kind === "ring") {
+    const tier = getRingMotifShankScaleTier(userPrompt);
+    if (tier) text = ensureStep1ExpandedRingMotifShankPhrase(text, tier);
+  }
+  return text;
 }
 
 export function step1ExpandFailureUserHint(detail: string): string {
@@ -347,11 +355,17 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "书写示例：戒面爪镶你认为颜色符合设计的锆石；叶脉间密镶你认为颜色符合整体意境的锆石；包镶点缀，镶嵌你认为颜色符合设计的锆石。",
     "仅当用户原始提示已明确指定非锆石类宝石或明确颜色要求时，才可保留用户意图中的相关表述。",
     "",
-    ...(args.kind === "ring" && userWantsDelicateThinWomensRing(args.prompt)
+    ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "ultra-thin"
       ? [
-          "=== 女性细戒 — 主题与戒臂平衡（硬性）===",
-          "用户意图为细戒/女戒/秀气通勤/适合女性日常佩戴：不论何种风格或主题，须强调纤细精致、可日常佩戴体量。",
-          "主题宜沿戒面上弧分布或自戒肩顺滑融入戒圈（约 1.2–1.8 倍戒臂宽度为体量上限）；禁止中央巨大盾形/牌饰/高台压在极细戒臂上，禁止头重脚轻与台阶式突兀过渡。",
+          "=== 细戒/女戒 — 主题与戒臂比例（仅此情况硬性）===",
+          `用户为细戒或女戒等：扩写正文必须**原样写入**：${STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
+          "",
+        ]
+      : []),
+    ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "medium-thin"
+      ? [
+          "=== 中细戒/中性戒指 — 主题与戒臂比例（仅此情况硬性）===",
+          `用户为中细戒或中性戒指等：扩写正文必须**原样写入**：${STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
           "",
         ]
       : []),

@@ -403,11 +403,33 @@ export function buildStep3MandatoryCameraOrbitBlock(
   ].join(" ");
 }
 
-/** 细戒、女性向、日常通勤等：主题不宜过大夸张，需与戒臂比例协调、自然融入 */
-export function userWantsDelicateThinWomensRing(prompt: string): boolean {
+/** 细戒 / 中细戒：主题相对戒臂的比例档位（Step1 扩写 + 生图软限制共用） */
+export type RingMotifShankScaleTier = "ultra-thin" | "medium-thin";
+
+/** Step1 扩写必须写入的整句（细戒） */
+export const STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE =
+  "设计主题相对戒臂 1.2–1.6 倍，并强调肩线融合、禁止中间大两侧小";
+
+/** Step1 扩写必须写入的整句（中细戒 / 中性戒指） */
+export const STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE =
+  "设计主题相对戒臂 1.2–1.8 倍，并强调肩线融合、禁止中间大两侧小";
+
+/** 中细戒、中性戒指 → 1.2–1.8（优先于细戒/女戒档） */
+export function userWantsMediumThinRing(prompt: string): boolean {
+  const pl = prompt.toLowerCase();
+  if (/(中细戒指|中细戒|中细款|中细圈|中性戒指|中性戒|男女通用戒|男女皆宜戒)/i.test(prompt)) {
+    return true;
+  }
+  if (/\b(unisex|gender[-\s]?neutral)\s+ring\b/i.test(pl)) return true;
+  return false;
+}
+
+/** 细戒、女戒等 → 1.2–1.6（不含已命中中细/中性档） */
+export function userWantsUltraThinRing(prompt: string): boolean {
+  if (userWantsMediumThinRing(prompt)) return false;
   const pl = prompt.toLowerCase();
   if (
-    /(细戒|细戒指|细圈|细款戒|纤细|女戒|女士戒指|女性佩戴|适合女性|适合女士|女性.{0,4}佩戴|秀气|纤巧|轻薄戒|窄戒|细戒臂|戒臂[^，。\n]{0,8}细|小巧戒|精致小戒|日常通勤戒|通勤戒|通勤款|日常戒|日常佩戴|上班佩戴|通勤佩戴|办公佩戴|女性日常佩戴)/i.test(
+    /(细戒|细戒指|细圈|细款戒|纤细|纤巧|轻薄戒|窄戒|细戒臂|戒臂[^，。\n]{0,8}细|小巧戒|精致小戒|女戒|女士戒指|女性戒指|女生戒指|女式戒|女款戒|适合女性|适合女士|女性.{0,4}佩戴)/i.test(
       prompt
     )
   ) {
@@ -415,15 +437,42 @@ export function userWantsDelicateThinWomensRing(prompt: string): boolean {
   }
   if (
     /\b(thin|slim|narrow|delicate|dainty)\s+(ring|band|shank)\b/.test(pl) ||
-    /\b(women'?s|womens)\s+ring\b/.test(pl) ||
-    /\bring\s+for\s+women\b/.test(pl) ||
-    /\bpetite\s+ring\b/.test(pl) ||
-    /\b(everyday|daily\s+wear|office\s+wear|commute|commuter)\s+ring\b/.test(pl) ||
-    /\bring\s+for\s+(everyday|daily|work|office)\b/.test(pl)
+    /\b(women'?s|womens|ladies)\s+ring\b/.test(pl) ||
+    /\bring\s+for\s+women\b/.test(pl)
   ) {
     return true;
   }
   return false;
+}
+
+export function getRingMotifShankScaleTier(prompt: string): RingMotifShankScaleTier | null {
+  if (userWantsMediumThinRing(prompt)) return "medium-thin";
+  if (userWantsUltraThinRing(prompt)) return "ultra-thin";
+  return null;
+}
+
+/** 仅细戒/女戒或中细/中性戒：需主题与戒臂比例句；其余戒指不做此要求 */
+export function userWantsDelicateThinWomensRing(prompt: string): boolean {
+  return getRingMotifShankScaleTier(prompt) !== null;
+}
+
+export function mandatoryPhraseForRingMotifShankTier(tier: RingMotifShankScaleTier): string {
+  return tier === "ultra-thin"
+    ? STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE
+    : STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE;
+}
+
+/** 扩写后处理：细戒/中细戒必须含对应比例整句 */
+export function ensureStep1ExpandedRingMotifShankPhrase(
+  expanded: string,
+  tier: RingMotifShankScaleTier
+): string {
+  const phrase = mandatoryPhraseForRingMotifShankTier(tier);
+  const trimmed = expanded.trim();
+  if (!trimmed) return phrase;
+  if (trimmed.includes(phrase)) return trimmed;
+  const sep = /[。；]\s*$/.test(trimmed) ? "" : "。";
+  return `${trimmed}${sep}${phrase}`;
 }
 
 /**
@@ -464,36 +513,23 @@ export function buildRingWomensOnModelLuxuryPresentationBlock(
  * 劣品参考：极细戒臂 + 中央巨大盾形/牌饰/高台，断崖式台阶、头重脚轻。
  */
 export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): string {
-  if (!userWantsDelicateThinWomensRing(prompt)) return "";
+  const tier = getRingMotifShankScaleTier(prompt);
+  if (!tier) return "";
+  const phrase = mandatoryPhraseForRingMotifShankTier(tier);
   return [
-    "【女性细戒 — 纤巧精致与主题/戒臂平衡（必须遵守）】",
-    "触发：用户意图为细戒、女戒、秀气通勤款、适合女性/日常佩戴等；**不论**哥特、维多利亚、自然、动物、花卉、几何等何种设计风格或主题，均须遵守下列比例与过渡规则。",
-    "",
-    "整体气质：戒指须呈现**纤细、精致、可日常佩戴**的体量；戒臂为实心金属、有可信厚度，但不得细如一根金丝；主题区亦不得膨胀为占满指背的「大块牌饰」或独立雕塑台。",
-    "",
-    "平衡感（参考良品）：",
-    "- 主题装饰宜沿戒面**上弧**分布，或自**戒肩**向两侧顺滑延展、渐宽融入戒圈，像从戒臂「长出来」，而非整块摞在细圈顶上。",
-    "- 主题区最大宽度/视觉厚度宜与戒臂同量级：相对戒臂约 **1.2–1.8 倍**为合理上限；花卉、叶片、藤蔓、羽毛、兽首等须**克制体量**，保持秀气。",
-    "- 戒肩到戒臂须**连续金属流线**，无突兀断崖、无独立高台/厚垫/盾形大牌与极细戒臂的强烈对比。",
-    "",
-    "禁止（参考劣品 — 失败构图）：",
-    "- 戒臂四周极细，中央却突然隆起**巨大盾形/菱形牌饰/高台/厚垫**，中间造型视觉重量碾压戒圈（头重脚轻、过渡生硬）。",
-    "- 主题与戒臂**粗细悬殊**、台阶式断层、奖杯式大冠台、像「细铁丝 + 大块吊坠」拼在一起的效果。",
-    "- 为突出主题而牺牲戒臂连续性：禁止牺牲肩线融合去堆叠过厚、过宽的中央金属块。",
-    "",
-    "DELICATE WOMEN'S RING — SHANK / MOTIF BALANCE (strict, all styles):",
-    "Slender, refined, everyday-wearable scale. Motif mass must stay proportional to shank width and thickness — NOT a theatrical oversized centerpiece on a hairline wire band.",
-    "GOOD: motif spreads along the upper arc OR tapers from shoulders with smooth shoulder integration; motif footprint ~1.2–1.8× shank width max; continuous metal flow from band into decoration.",
-    "BAD (forbid): tiny wire shank + huge shield/plaque/platform/crown with abrupt step-off; trophy top much wider than band; kite/diamond plaque dominating a narrow loop; 'pendant on a wire' look.",
-    "Step3 / init note: if the input SKU already shows severe top-heavy imbalance, do NOT amplify it — gently correct toward proportional shoulders and integrated flow while keeping the same theme vocabulary.",
+    "【戒指主题/戒臂比例（仅细戒·女戒或中细·中性戒触发）】",
+    phrase,
+    "RING MOTIF/SHANK (when triggered): obey the Chinese ratio line above; smooth shoulder integration; FORBID center-heavy 'big middle, thin sides' silhouette.",
   ].join("\n");
 }
 
 /** 细戒专用全局负面补充（与 buildGlobalNegativePromptBlock 拼接） */
 export function buildDelicateRingBalanceNegativeLines(prompt: string): string[] {
-  if (!userWantsDelicateThinWomensRing(prompt)) return [];
+  const tier = getRingMotifShankScaleTier(prompt);
+  if (!tier) return [];
+  const maxMul = tier === "ultra-thin" ? "1.6" : "1.8";
   return [
-    "Delicate women's ring negatives: NO oversized shield/kite/plaque centerpiece on a much thinner shank; NO abrupt vertical step from narrow band to thick top platform; NO trophy crown or standalone pedestal wider than ~1.8× the shank; NO 'thin wire + huge top charm' contrast; NO head-heavy silhouette where the motif reads as a separate lump on the band.",
+    `Delicate ring negatives (${tier}): NO center-heavy 'big middle, thin sides' shank read; NO oversized shield/kite/plaque on a much thinner shank; NO abrupt step from narrow band to thick top platform; NO trophy crown wider than ~${maxMul}× the shank; NO 'thin wire + huge top charm' contrast.`,
   ];
 }
 
@@ -768,8 +804,13 @@ export function buildMainImageCompositionBlock(
         "Forbidden framing for animal-head ring hero: side profile ring showcase, rotated shank-first angle, or back-of-head emphasis."
       );
       if (userWantsDelicateThinWomensRing(prompt)) {
+        const tier = getRingMotifShankScaleTier(prompt);
+        const ratio =
+          tier === "ultra-thin"
+            ? "1.2–1.6× shank width"
+            : "1.2–1.8× shank width";
         lines.push(
-          "Delicate / commute / women's band override: keep the animal clearly readable and frontal, but motif relief height and top footprint must stay proportional to the shank — flow into shoulders with smooth taper; NO oversized or exaggerated top platform much wider than the band (avoid severe visual imbalance)."
+          `Delicate ring override: animal readable and frontal; motif footprint ~${ratio} max with smooth shoulder integration; FORBID center-heavy 'big middle, thin sides' composition.`
         );
       }
     }
