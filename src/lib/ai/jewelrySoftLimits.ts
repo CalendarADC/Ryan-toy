@@ -555,6 +555,12 @@ export function buildZirconInlayAiColorMatchBlock(
     "若扩写已写明商品色名（如香槟锆、深海蓝锆、粉红锆等），须在本图中按扩写色名落实，不得擅自改成白锆或其它色。",
     "若扩写未写色名，请根据设计主题自动选择协调锆石色泽，避免机械默认全白锆。",
     "ZIRCON COLOR (image model decides): match hue to motif + style + metal; avoid habitually rendering all stones colorless/white unless the design truly calls for it.",
+    "",
+    "【宝石数量与布局 — 必须遵守】",
+    "整件首饰可见镶嵌宝石总共不超过 6 颗；锆石/宝石颜色不超过 3 种。",
+    "禁止密排/连片/成排/成带镶、轨道或凹槽内连续小颗镶、花瓣/藤蔓/戒臂表面碎钻铺满（反例：一排蓝锆、满镶小花）。",
+    "须保留金属间隙，主石突出、配石稀疏；颗数与色号须与扩写一致，不得擅自增加宝石或颜色。",
+    "GEM COUNT (strict): at most 6 visible set stones total, at most 3 distinct stone colors; no pavé rows, channel-packed melee, or all-over micro-stone coverage.",
   ].join("\n");
 }
 

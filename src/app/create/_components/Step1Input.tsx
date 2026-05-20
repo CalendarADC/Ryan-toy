@@ -30,8 +30,8 @@ import Step1PresetWizard, { type Step1PresetWizardSavePayload } from "./Step1Pre
 import ImagePreviewModal from "./ImagePreviewModal";
 import {
   STEP1_EXPAND_DEPTH_STORAGE_KEY,
+  formatStep1ExpandErrorForUser,
   parseStep1ExpandDepth,
-  step1ExpandFailureUserHint,
   type Step1ExpandDepth,
 } from "@/lib/ai/step1PromptAiExpander";
 
@@ -460,13 +460,7 @@ export default function Step1Input() {
           data?.expandProvider && data?.expandBaseUrlHost
             ? `当前识图网关：${data.expandProvider}（${data.expandBaseUrlHost}）。`
             : "";
-        const hint = step1ExpandFailureUserHint(detail);
-        const core =
-          hint.includes("火山方舟") ||
-          hint.includes("STEP1_EXPAND") ||
-          hint.includes("VISION")
-            ? hint
-            : detail;
+        const core = formatStep1ExpandErrorForUser(detail);
         throw new Error(via ? `${via}${core}` : core);
       }
       const data = (await res.json()) as {
@@ -537,9 +531,7 @@ export default function Step1Input() {
           data?.expandProvider && data?.expandBaseUrlHost
             ? `当前扩写网关：${data.expandProvider}（${data.expandBaseUrlHost}）。`
             : "";
-        const hint = step1ExpandFailureUserHint(detail);
-        const core =
-          hint.includes("火山方舟") || hint.includes("STEP1_EXPAND") ? hint : detail;
+        const core = formatStep1ExpandErrorForUser(detail);
         throw new Error(via ? `${via}${core}` : core);
       }
       const data = (await res.json()) as {

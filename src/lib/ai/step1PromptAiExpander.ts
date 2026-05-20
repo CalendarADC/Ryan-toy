@@ -179,6 +179,12 @@ function extractAssistantText(
   if (reasoning && !reasoningLooksReasoning) return pick(reasoning);
   if (content && /设计一枚S925银(?:戒指|吊坠)/.test(content)) return pick(content);
   if (reasoning && /设计一枚S925银(?:戒指|吊坠)/.test(reasoning)) return pick(reasoning);
+  if (kind) {
+    const fromReasoning = extractStep1ExpandFinalPrompt(reasoning, kind);
+    if (fromReasoning) return fromReasoning;
+    const fromContent = extractStep1ExpandFinalPrompt(content, kind);
+    if (fromContent) return fromContent;
+  }
   return pick(content) || pick(reasoning);
 }
 
@@ -490,13 +496,31 @@ export function userPromptAllowsEnamelOrLiuli(userPrompt: string): boolean {
 const ENAMEL_LIULI_IN_EXPANDED_RE =
   /珐琅|琉璃|掐丝珐琅|搪瓷珐琅|法琅|烧蓝|琉璃质|琉璃材质|enamel|cloisonn[eé]|liuli/gi;
 
+/** 扩写：整件可见镶嵌宝石上限、色号上限 */
+export const STEP1_EXPAND_MAX_GEM_COUNT = 6;
+export const STEP1_EXPAND_MAX_GEM_COLOR_COUNT = 3;
+
 /** 扩写禁止出现的镶嵌工艺（密镶 / 微镶 / 排镶等） */
 const PAVE_INLAY_IN_EXPANDED_RE = /密镶|微镶|排镶/g;
 const PAVE_INLAY_IN_USER_PROMPT_RE = /密镶|微镶|排镶/;
 
+/** 成片/成行/铺满式密集镶（用户附图类反例） */
+const DENSE_GEM_INLAY_EXPANDED_RE =
+  /满镶|铺镶|密排|连镶|全线镶|密密麻麻|碎钻铺满|满天星|轨道镶|槽镶|一字排镶|成排镶|成带镶|连片镶|密布|镶满|铺满.{0,6}锆|一排.{0,10}小锆|连续.{0,8}(镶|嵌).{0,6}锆|碎钻.{0,6}排/g;
+
+const EXCESS_GEM_COUNT_PHRASE_RE =
+  /[一二两三四五六七八九十百\d]{2,}颗|数十颗|上百颗|无数颗|多颗碎钻|满满当当|成百上千颗/g;
+
+const DENSE_GEM_LAYOUT_IN_USER_PROMPT_RE =
+  /密镶|满镶|密排|铺镶|密布|满天星|pavé|pave|micro.?pavé|micro.?pave/i;
+
 /** 用户原文是否明确要求密镶类工艺 */
 export function userPromptAllowsPaveInlay(userPrompt: string): boolean {
   return PAVE_INLAY_IN_USER_PROMPT_RE.test(userPrompt);
+}
+
+export function userPromptAllowsDenseGemLayout(userPrompt: string): boolean {
+  return DENSE_GEM_LAYOUT_IN_USER_PROMPT_RE.test(userPrompt);
 }
 
 /**
@@ -519,6 +543,23 @@ export function sanitizeStep1ExpandedInlayMaterials(
   return text.trim();
 }
 
+/**
+ * AI 扩写后处理：限制宝石颗数表述、去除成片密集镶用语（用户原文要求密排/满镶时保留）。
+ */
+export function sanitizeStep1ExpandedGemLayout(
+  expanded: string,
+  userPrompt: string
+): string {
+  if (userPromptAllowsDenseGemLayout(userPrompt)) {
+    return expanded.trim();
+  }
+  let text = expanded.replace(DENSE_GEM_INLAY_EXPANDED_RE, "爪镶点缀");
+  text = text.replace(EXCESS_GEM_COUNT_PHRASE_RE, "少量点缀");
+  text = text.replace(/[，、]{2,}/g, "，");
+  text = text.replace(/[，、]\s*([。；\n])/g, "$1");
+  return text.trim();
+}
+
 /** 扩写结果统一后处理（展示背景 + 镶嵌禁珐琅琉璃 + 清除旧版锆石委托句式） */
 export function finalizeStep1ExpandedPrompt(
   expanded: string,
@@ -526,8 +567,11 @@ export function finalizeStep1ExpandedPrompt(
   userPrompt: string
 ): string {
   let text = normalizeStep1ExpandedZirconInlay(
-    sanitizeStep1ExpandedInlayMaterials(
-      normalizeStep1ExpandedPromptDisplayBackground(expanded, kind),
+    sanitizeStep1ExpandedGemLayout(
+      sanitizeStep1ExpandedInlayMaterials(
+        normalizeStep1ExpandedPromptDisplayBackground(expanded, kind),
+        userPrompt
+      ),
       userPrompt
     ),
     userPrompt
@@ -538,6 +582,10 @@ export function finalizeStep1ExpandedPrompt(
   }
   return text;
 }
+
+/** 与 step1ExpandFailureUserHint 默认兜底句一致，供前端判断是否应优先展示服务端 detail */
+export const STEP1_EXPAND_FAILURE_GENERIC_HINT =
+  "若持续失败，请检查 STEP1_EXPAND_API_KEY / STEP1_EXPAND_MODEL / STEP1_EXPAND_BASE_URL，或稍后重试。";
 
 export function step1ExpandFailureUserHint(detail: string): string {
   const d = detail.toLowerCase();
@@ -570,7 +618,27 @@ export function step1ExpandFailureUserHint(detail: string): string {
   ) {
     return "当前 STEP1_EXPAND_VISION_MODEL 可能不支持识图，请在环境变量中配置火山方舟已开通的多模态模型（如豆包视觉系列或 kimi-k2.6）。";
   }
-  return "若持续失败，请检查 STEP1_EXPAND_API_KEY / STEP1_EXPAND_MODEL / STEP1_EXPAND_BASE_URL，或稍后重试。";
+  if (
+    /思考过程|未返回符合开头|改写返回为空|改写未返回/i.test(detail)
+  ) {
+    return "扩写结果未通过格式校验。请点灯泡右下角切换到「深度」后重试；桌面版请确认已配置 STEP1_EXPAND_MODEL（如 kimi-k2.6）并重启软件。";
+  }
+  return STEP1_EXPAND_FAILURE_GENERIC_HINT;
+}
+
+/** 将 API/上游 detail 转为用户可见主文案（避免笼统 STEP1_EXPAND 提示盖住真实错误） */
+export function formatStep1ExpandErrorForUser(detail: string): string {
+  const trimmed = detail.trim();
+  const hint = step1ExpandFailureUserHint(trimmed);
+  if (!trimmed) return hint;
+  if (hint === STEP1_EXPAND_FAILURE_GENERIC_HINT) return trimmed;
+  if (
+    /Step1 AI|思考过程|HTTP \d{3}|改写|扩写结果/i.test(trimmed) &&
+    !trimmed.includes(hint)
+  ) {
+    return `${trimmed} ${hint}`;
+  }
+  return hint;
 }
 
 export async function postStep1ExpandChat(args: {
@@ -741,7 +809,7 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "1) 不改变品类与主体元素。",
     "2) 只选一个设计主命题并贯穿（说明最想被看见什么、为此牺牲什么）。",
     "3) 明确外轮廓语法：对称性、重心、开口或延展方向。",
-    "4) 明确镶嵌架构与石位节奏：镶口类型、主辅石关系、石位节奏。",
+    `4) 明确镶嵌架构与石位节奏：镶口类型、主辅石关系；全件可见宝石≤${STEP1_EXPAND_MAX_GEM_COUNT}颗、色号≤${STEP1_EXPAND_MAX_GEM_COLOR_COUNT}种，禁止成片密排镶。`,
     "5) 主动规避常见模板，并声明至少两项与常规解法不同。",
     "",
     "=== 反同质化规则（强约束，每次命中 2-3 条）===",
@@ -764,9 +832,15 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "禁止出现「密镶」「微镶」「排镶」及同义密排镶工艺；一律改用爪镶、包镶、钉镶、珠镶、金属托镶、宝石镶口等可量产工艺表述。",
     "仅当用户原始提示中已明确写出珐琅、琉璃或密镶时，才可保留对应表述；否则一律不得写入扩写结果。",
     "",
+    `=== 宝石数量与布局（硬性，反密排镶 — 必须遵守）===`,
+    `整件首饰画面中「可见镶嵌宝石」（主石+所有配石/点缀/小花蕊石）总共不得超过 ${STEP1_EXPAND_MAX_GEM_COUNT} 颗；必须在正文中写清确切颗数（如主石 1 颗、配石 3 颗），禁止「多颗」「若干颗」「一排」「满心」「铺满」「密镶」「碎钻排镶」等含糊或超标表述。`,
+    `宝石颜色（锆石须用下方商品色名）整件最多 ${STEP1_EXPAND_MAX_GEM_COLOR_COUNT} 种；正文须点明所用色号，禁止出现第 4 种色。`,
+    "禁止连片/成行/成带/轨道或凹槽内的连续小颗镶（如附图反例：凹槽内一排蓝锆、花瓣或藤蔓表面碎钻铺满、满天星式密排）；镶口须留金属间隙，主石突出、配石稀疏点缀。",
+    `推荐结构：1 颗主石 + 至多 ${STEP1_EXPAND_MAX_GEM_COUNT - 1} 颗配石，或 2–${STEP1_EXPAND_MAX_GEM_COUNT} 颗体量相近的点缀；不得描述超过 ${STEP1_EXPAND_MAX_GEM_COUNT} 颗的任何宝石。`,
+    "",
     "=== 宝石镶嵌配石（须在商品色板内选色，由你自动搭配）===",
     `可用锆石商品色名仅限以下列表（不得自造列表外色名）：${formatStep1ZirconCatalogForPrompt()}。`,
-    "主石与点缀石须从该列表中各选 1 个（或主石 1 个 + 点缀 1–2 个）协调色号，并写全称（如「爪镶香槟锆主石，叶脉钉镶深海蓝锆点缀」）。",
+    `主石与点缀须从该列表选色，全件所用色号≤${STEP1_EXPAND_MAX_GEM_COLOR_COUNT} 种、全件宝石颗数≤${STEP1_EXPAND_MAX_GEM_COUNT} 颗，并写全称（如「爪镶香槟锆主石 1 颗，钉镶深海蓝锆与粉红锆点缀共 3 颗」）。`,
     "具体选哪几个色号由你根据设计主题、风格、金属色（如 S925 银）与整体意境自动决定，但名称必须来自上述列表。",
     "禁止使用「镶嵌你认为颜色符合设计的锆石」等委托式空泛句式；禁止写列表外的颜色名（如淡粉锆石、玫瑰金锆等，应写「粉红锆」「香槟锆」等目录名）。",
     "禁止擅自将主配石改成钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠等，除非用户原文已明确指定。",
@@ -816,7 +890,9 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
   content = extractStep1ExpandFinalPrompt(content, args.kind);
   if (!content || !/^设计一枚S925银(?:戒指|吊坠)/.test(content)) {
     throw new Error(
-      "Step1 AI 改写返回了思考过程而非最终提示词。请重试；若持续出现可检查 STEP1_EXPAND_MODEL 是否启用了思考模式。"
+      content
+        ? "Step1 AI 改写未返回符合开头的扩写正文（需以「设计一枚S925银戒指/吊坠」起头）。请切换到深度扩写后重试。"
+        : `Step1 AI 改写返回为空（${enableThinking ? "深度" : "快速"}模式）。请切换到深度扩写后重试，或检查 STEP1_EXPAND_MODEL。`
     );
   }
 

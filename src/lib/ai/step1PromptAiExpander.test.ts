@@ -10,8 +10,14 @@ import {
   resolveStep1ExpandChatCompletionsUrl,
   sanitizeStep1ReferenceImageUrls,
   sanitizeStep1ExpandedInlayMaterials,
+  sanitizeStep1ExpandedGemLayout,
+  STEP1_EXPAND_MAX_GEM_COLOR_COUNT,
+  STEP1_EXPAND_MAX_GEM_COUNT,
+  userPromptAllowsDenseGemLayout,
   userPromptAllowsPaveInlay,
+  formatStep1ExpandErrorForUser,
   step1ExpandFailureUserHint,
+  STEP1_EXPAND_FAILURE_GENERIC_HINT,
   STEP1_EXPAND_ZIRCON_CATALOG_COLOR_NAMES,
   userPromptAllowsEnamelOrLiuli,
   userPromptSpecifiesNonZirconGemstone,
@@ -78,6 +84,29 @@ describe("sanitizeStep1ExpandedInlayMaterials", () => {
     expect(userPromptAllowsPaveInlay("复古密镶排钻戒指")).toBe(true);
     const raw = "叶脉密镶白锆点缀。";
     expect(sanitizeStep1ExpandedInlayMaterials(raw, "复古密镶排钻戒指")).toBe(raw);
+  });
+});
+
+describe("sanitizeStep1ExpandedGemLayout", () => {
+  it("replaces dense inlay phrases with sparse wording", () => {
+    const raw = "戒臂凹槽内一排小锆连续密排满镶，花瓣碎钻铺满。";
+    const out = sanitizeStep1ExpandedGemLayout(raw, "紫藤戒指");
+    expect(out).not.toMatch(/满镶|密排|一排|铺满/);
+    expect(out).toContain("爪镶点缀");
+  });
+
+  it("finalize strips dense gem layout from expanded prompt", () => {
+    const raw =
+      "设计戒指。主石爪镶香槟锆 1 颗，藤蔓一排小锆密排满镶。展示背景：丝绒。";
+    const out = finalizeStep1ExpandedPrompt(raw, "ring", "紫藤戒指");
+    expect(out).not.toMatch(/满镶|密排|一排/);
+    expect(out).toContain("展示背景：根据设计，把戒指放到你认为合适的展示背景里");
+  });
+
+  it("exports gem count limits for prompt rules", () => {
+    expect(STEP1_EXPAND_MAX_GEM_COUNT).toBe(6);
+    expect(STEP1_EXPAND_MAX_GEM_COLOR_COUNT).toBe(3);
+    expect(userPromptAllowsDenseGemLayout("满天星密镶")).toBe(true);
   });
 });
 
@@ -183,6 +212,18 @@ describe("step1ExpandFailureUserHint", () => {
   it("suggests vision model when upstream rejects images", () => {
     const hint = step1ExpandFailureUserHint("model does not support image input");
     expect(hint).toContain("STEP1_EXPAND_VISION_MODEL");
+  });
+
+  it("formatStep1ExpandErrorForUser prefers server detail over generic hint", () => {
+    const detail = "Step1 AI 改写失败（HTTP 400）：invalid thinking type";
+    const out = formatStep1ExpandErrorForUser(detail);
+    expect(out).toContain("HTTP 400");
+    expect(out).not.toBe(STEP1_EXPAND_FAILURE_GENERIC_HINT);
+  });
+
+  it("formatStep1ExpandErrorForUser maps format validation to depth hint", () => {
+    const detail = "Step1 AI 改写未返回符合开头的扩写正文";
+    expect(formatStep1ExpandErrorForUser(detail)).toContain("深度");
   });
 });
 
