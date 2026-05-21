@@ -17,8 +17,11 @@ import {
   buildMainImageCompositionBlock,
   buildMaterialLightingBlock,
   buildPendantPhysicalBlock,
+  buildCompactRefEditProductionLimits,
+  buildReferenceEditInstructionBlock,
   buildReferenceFusionBlock,
   buildRingPhysicalBlock,
+  userPromptIsReferenceEditInstruction,
   buildNanoBananaProStep1SystemPrompt,
   buildStep1BatchMotifDiversityPreamble,
   buildStep1PerImageMotifVariantLine,
@@ -65,7 +68,8 @@ type Body = {
   laozhangApiKey?: string;
 };
 
-const MAX_REFERENCE_DATA_URL_CHARS = 14 * 1024 * 1024;
+/** 与 Step1 上传上限对齐；避免 Vercel 请求体过大导致 500 */
+const MAX_REFERENCE_DATA_URL_CHARS = 3_500 * 1024;
 
 function isValidReferenceDataUrl(v: string): boolean {
   if (!v.startsWith("data:image/")) return false;
@@ -211,12 +215,16 @@ export async function POST(req: Request) {
     ].join("\n");
 
     const refCount = referenceImageDataUrls.length;
+    const isReferenceEdit =
+      refCount > 0 && userPromptIsReferenceEditInstruction(prompt);
     const promptOriginal = prompt.trim();
-    const keywordBoosters = appendKeywordBoosters(prompt);
-    let semanticExpansion = buildNanoBananaPromptExpansion(prompt, expansionStrength);
+    const keywordBoosters = isReferenceEdit ? "" : appendKeywordBoosters(prompt);
+    let semanticExpansion = isReferenceEdit
+      ? ""
+      : buildNanoBananaPromptExpansion(prompt, expansionStrength);
     let expansionSource: "rules" | "ai" | "ai_fallback_rules" = "rules";
     let expansionModel: string | null = null;
-    if (expansionStrength === "strong") {
+    if (!isReferenceEdit && expansionStrength === "strong") {
       try {
         const ai = await expandStep1PromptWithAi({ prompt, kind });
         semanticExpansion = ai.expandedPrompt;
@@ -246,10 +254,14 @@ export async function POST(req: Request) {
               : []),
           ].join("\n\n")
         : "";
-    const boostedPrompt = [basePromptWithBoosters, semanticExpansion, postAiExpandSinglePieceLock]
-      .filter(Boolean)
-      .join("\n\n");
-    const referencePreamble = buildReferenceFusionBlock(refCount, prompt);
+    const boostedPrompt = isReferenceEdit
+      ? promptOriginal
+      : [basePromptWithBoosters, semanticExpansion, postAiExpandSinglePieceLock]
+          .filter(Boolean)
+          .join("\n\n");
+    const referencePreamble = isReferenceEdit
+      ? buildReferenceEditInstructionBlock(refCount, prompt)
+      : buildReferenceFusionBlock(refCount, prompt);
     const cappyCalmLock =
       refCount > 0 && cappyCalmLockPreset
         ? buildCappyCalmCharacterLockBlock(cappyCalmLockPreset)
@@ -260,21 +272,25 @@ export async function POST(req: Request) {
       kind === "pendant"
         ? "\n\nPENDANT — FINAL LOCK (wins over reference + expansion): **No chain in frame.** Re-crop mentally: highest metal = bail loop; nothing linked above it. Violation = failed render."
         : "";
-    const productionSoftLimits = [
-      kind === "ring"
-        ? buildRingPhysicalBlock("main", false)
-        : buildPendantPhysicalBlock(false),
-      buildMaterialLightingBlock(promptLower, isSterling925),
-      buildMainImageCompositionBlock(kind, prompt),
-      kind === "ring" ? buildDelicateRingMotifScaleIntegrationBlock(prompt) : "",
-      buildZirconInlayAiColorMatchBlock(prompt, kind),
-      buildGlobalNegativePromptBlock(prompt, { pendantProductNoChain: kind === "pendant" }),
-    ]
-      .filter(Boolean)
-      .join("\n\n")
-      .concat(pendantChainFinalLock);
+    const productionSoftLimits = isReferenceEdit
+      ? buildCompactRefEditProductionLimits(kind, prompt).concat(pendantChainFinalLock)
+      : [
+          kind === "ring"
+            ? buildRingPhysicalBlock("main", false)
+            : buildPendantPhysicalBlock(false),
+          buildMaterialLightingBlock(promptLower, isSterling925),
+          buildMainImageCompositionBlock(kind, prompt),
+          kind === "ring" ? buildDelicateRingMotifScaleIntegrationBlock(prompt) : "",
+          buildZirconInlayAiColorMatchBlock(prompt, kind),
+          buildGlobalNegativePromptBlock(prompt, { pendantProductNoChain: kind === "pendant" }),
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+          .concat(pendantChainFinalLock);
 
-    const batchDiversity = buildStep1BatchMotifDiversityPreamble(count, prompt);
+    const batchDiversity = isReferenceEdit
+      ? ""
+      : buildStep1BatchMotifDiversityPreamble(count, prompt);
     const userFacingExpandedPromptCommon = [
       "?Nano Banana Pro ?????????",
       "????????????????????????/???/?????",
@@ -303,8 +319,18 @@ export async function POST(req: Request) {
       refCount > 0 && userRequestsStrictScenePreservation(prompt)
         ? buildStrictSceneTonePreservationBlock()
         : "";
-    const finalPromptCommon =
-      refCount > 0
+    const finalPromptCommon = isReferenceEdit
+      ? [
+          referencePreamble,
+          cappyCalmLock,
+          strictSceneToneLock,
+          productionSoftLimits,
+          buildSingleJewelryPieceOnlyConstraintBlock(),
+          batchDiversity,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : refCount > 0
         ? `${referencePreamble}${cappyCalmLock ? `\n\n${cappyCalmLock}` : ""}${
             strictSceneToneLock ? `\n\n${strictSceneToneLock}` : ""
           }\n\n${systemPrompt}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
@@ -339,6 +365,7 @@ export async function POST(req: Request) {
               sampling,
               laoZhangImageModel,
               laozhangApiKey,
+              promptAfterImages: isReferenceEdit,
             })
           : laoZhangTextToImage({
               prompt: e.promptForThis,
@@ -388,9 +415,29 @@ export async function POST(req: Request) {
       ...(aiExpandWarning ? { warning: aiExpandWarning } : {}),
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "????";
-    const hint = laoZhangImageFailureUserHint(message);
+    const message = e instanceof Error ? e.message : "Step1 生图失败";
+    const hint = generateMainFailureUserHint(message);
+    console.error("[generate-main]", message, e);
     return NextResponse.json({ message, hint }, { status: 500 });
   }
+}
+
+function generateMainFailureUserHint(detail: string): string {
+  const d = detail.toLowerCase();
+  if (
+    d.includes("connection pool") ||
+    d.includes("p1008") ||
+    d.includes("timed out fetching") ||
+    d.includes("too many connections")
+  ) {
+    return "服务器数据库连接繁忙，请隔几秒再试；若同时开了多张生成可改为 1 张。";
+  }
+  if (d.includes("payload") || d.includes("too large") || d.includes("413")) {
+    return "请求体过大（多为参考图过大），请压缩参考图或减少张数后重试。";
+  }
+  if (d.includes("缺少老张") || d.includes("api key")) {
+    return laoZhangImageFailureUserHint(detail);
+  }
+  return laoZhangImageFailureUserHint(detail);
 }
 

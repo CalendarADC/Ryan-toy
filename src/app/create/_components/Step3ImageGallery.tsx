@@ -7,7 +7,7 @@ import ImagePreviewModal from "./ImagePreviewModal";
 import BrandButton from "./BrandButton";
 import WindowedMount from "./WindowedMount";
 import { emitToast } from "@/lib/ui/toast";
-import { copyImageToClipboard, copyImageToClipboardErrorMessage } from "@/lib/ui/copyImageToClipboard";
+import { copyImageToClipboard, toastForCopyImageOutcome } from "@/lib/ui/copyImageToClipboard";
 import { downloadImage } from "@/lib/ui/downloadImage";
 import { applyStep1ReferenceFromGalleryUrl } from "@/lib/ui/applyStep1ReferenceFromGalleryUrl";
 import { CREATE_STEP_PAPER } from "./createStepShell";
@@ -1308,8 +1308,12 @@ export default function Step3ImageGallery() {
                       👁
                     </button>
                   ) : null}
-                  {!compact ? (
-                    <div className="pointer-events-auto absolute left-2 bottom-2 flex items-center gap-1">
+                  <div
+                    className={[
+                      "pointer-events-auto absolute left-2 flex items-center gap-1",
+                      compact ? "bottom-1" : "bottom-2",
+                    ].join(" ")}
+                  >
                     <button
                       type="button"
                       onClick={async (e) => {
@@ -1322,7 +1326,10 @@ export default function Step3ImageGallery() {
                           emitToast({ message: `下载失败：${msg || "图片地址不可访问或跨域受限。"}`, type: "error" });
                         }
                       }}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white"
+                      className={[
+                        "inline-flex items-center justify-center rounded-full bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white",
+                        compact ? "h-6 w-6" : "h-7 w-7",
+                      ].join(" ")}
                       aria-label="下载"
                     >
                       <span className="text-xs">↓</span>
@@ -1331,30 +1338,26 @@ export default function Step3ImageGallery() {
                       type="button"
                       aria-label="复制图片到剪贴板"
                       title="复制图片到剪贴板"
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={async (e) => {
                         e.stopPropagation();
-                        const ok = await copyImageToClipboard(img.url);
-                        if (ok) {
+                        const outcome = await copyImageToClipboard(img.url);
+                        const toast = toastForCopyImageOutcome(outcome);
+                        if (outcome.ok) {
                           setCopiedId(img.id);
-                          emitToast({ message: "已复制图片到剪贴板", type: "success" });
                           window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
-                        } else {
-                          emitToast({
-                            message: copyImageToClipboardErrorMessage(),
-                            type: "error",
-                            durationMs: 2200,
-                          });
                         }
+                        emitToast({ ...toast, durationMs: outcome.ok ? undefined : 2200 });
                       }}
                       className={[
-                        "inline-flex h-7 w-7 items-center justify-center rounded-full ring-1 backdrop-blur",
+                        "inline-flex items-center justify-center rounded-full ring-1 backdrop-blur",
+                        compact ? "h-6 w-6" : "h-7 w-7",
                         copiedId === img.id ? "bg-green-600 text-white ring-green-600" : "bg-white/90 text-gray-700 ring-gray-200 hover:bg-white",
                       ].join(" ")}
                     >
                       {copiedId === img.id ? <span className="text-[10px] font-bold">✓</span> : <span className="text-xs">⎘</span>}
                     </button>
-                    </div>
-                  ) : null}
+                  </div>
                   {!compact ? (
                     <div className="pointer-events-auto absolute right-2 bottom-2 flex items-center gap-1">
                     {viewMode !== "current" ? (
@@ -1715,9 +1718,10 @@ export default function Step3ImageGallery() {
                 <button
                   type="button"
                   onClick={async () => {
-                    const ok = await copyImageToClipboard(current.url);
-                    if (ok) emitToast({ message: "已复制图片到剪贴板", type: "success" });
-                    else emitToast({ message: copyImageToClipboardErrorMessage(), type: "error" });
+                    const toast = toastForCopyImageOutcome(
+                      await copyImageToClipboard(current.url)
+                    );
+                    emitToast(toast);
                   }}
                   className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold"
                 >

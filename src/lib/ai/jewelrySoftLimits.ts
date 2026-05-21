@@ -835,6 +835,55 @@ export function buildMainImageCompositionBlock(
   return lines.join("\n");
 }
 
+/**
+ * 用户是否在「参考图精修」：移除/保留镶石、改浮雕等，而非从零设计。
+ * 此类请求应优先服从用户原文，避免英文 creative expansion 反向加石。
+ */
+export function userPromptIsReferenceEditInstruction(prompt: string): boolean {
+  const t = prompt.trim();
+  if (!t) return false;
+  const editVerb =
+    /(?:移除|删除|去掉|取消|改为|改成|修改为|更换为|仅保留|保留|不要|不得|禁止)/.test(t);
+  const scopeCue =
+    /(?:参考|如图|原图|同款|比例|造型|外框|浮雕|镶|锆|宝石|密镶|碎钻|翅膀|月牙|吊坠)/.test(t);
+  return editVerb && scopeCue;
+}
+
+/** 参考图精修：短约束块，用户中文指令为最高优先级 */
+export function buildReferenceEditInstructionBlock(refCount: number, prompt: string): string {
+  const kind = inferJewelryProductKind(prompt);
+  const kindCn = kind === "pendant" ? "吊坠" : "戒指";
+  return [
+    `【参考图精修 — ${refCount} 张】`,
+    `任务类型：在参考图${kindCn}上做定向修改，不是重新设计全新款式。`,
+    "优先级（strict）：用户下列中文修改说明 > 参考图结构 > 任何风格扩写；不得违背用户「移除/仅保留 N 颗」等数量与位置要求。",
+    "结构：保持参考图整体比例、轮廓与拓扑，仅按用户说明改镶石区域与表面工艺。",
+    "宝石（strict）：全件可见镶嵌宝石总共不超过 6 颗、颜色不超过 3 种；若用户写明具体颗数与位置（如外框 4 颗），必须严格遵守，禁止额外加石。",
+    "禁止：成片/成行/成带密排镶、凹槽内连续小颗镶、花瓣/表面碎钻铺满；禁止密镶、满镶、满天星式点缀。",
+    kind === "pendant"
+      ? "吊坠主图：仅吊坠本体+吊环，禁止出现项链链条。"
+      : "戒指主图：单枚戒指，戒圈内侧平顺可戴。",
+    "用户修改说明（必须落实）：",
+    prompt.trim(),
+  ].join("\n");
+}
+
+/** 精修模式下的精简生产约束（避免超长 prompt 触发上游失败） */
+export function buildCompactRefEditProductionLimits(
+  kind: JewelryProductKind,
+  prompt: string
+): string {
+  return [
+    buildZirconInlayAiColorMatchBlock(prompt, kind),
+    buildGlobalNegativePromptBlock(prompt, { pendantProductNoChain: kind === "pendant" }),
+    kind === "pendant"
+      ? "PENDANT FINAL: no necklace chain in frame; bail upright only."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** Step1 有参考图时的融合权重与草图/竞品说明 */
 export function buildReferenceFusionBlock(refCount: number, prompt: string): string {
   if (refCount <= 0) return "";

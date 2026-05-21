@@ -1,4 +1,4 @@
-import { styleLabelById } from "@/lib/step1/step1StyleOptions";
+import { sanitizeStep1StyleIds, styleLabelById } from "@/lib/step1/step1StyleOptions";
 
 export type Step1DiceStrength =
   | "single_element_single_style"
@@ -130,7 +130,9 @@ export function normalizeStep1Preset(raw: unknown): Step1Preset | null {
     id: o.id,
     name: o.name,
     elements: o.elements.filter((e): e is string => typeof e === "string"),
-    styleIds: o.styleIds.filter((s): s is string => typeof s === "string"),
+    styleIds: sanitizeStep1StyleIds(
+      o.styleIds.filter((s): s is string => typeof s === "string")
+    ),
     designObject: o.designObject,
     materials,
     ringSizeAdaptations,

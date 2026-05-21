@@ -1340,7 +1340,7 @@ export default function Step1Input() {
                 <div
                   role="listbox"
                   aria-label="选择风格参考"
-                  className={`${STEP1_STYLE_MENU_PANEL} w-[460px] grid grid-cols-2 gap-1 p-2`}
+                  className={`${STEP1_STYLE_MENU_PANEL} w-[min(100vw-2rem,540px)] grid grid-cols-3 gap-1 p-2`}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {STEP1_STYLE_OPTIONS.map((style) => (
@@ -1351,7 +1351,7 @@ export default function Step1Input() {
                       onToggle={() => toggleStyle(style.id)}
                     />
                   ))}
-                  <div className="col-span-2 border-t border-gray-200 px-3 py-2 mt-1">
+                  <div className="col-span-3 border-t border-gray-200 px-3 py-2 mt-1">
                     <button
                       type="button"
                       disabled={selectedStyles.length === 0}

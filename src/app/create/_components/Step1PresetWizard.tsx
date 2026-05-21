@@ -185,7 +185,7 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
         ) : null}
 
         {step === 1 ? (
-          <div className="grid max-h-[280px] grid-cols-2 gap-1 overflow-y-auto overflow-x-visible rounded-xl border border-[rgba(94,111,130,0.12)] p-2">
+          <div className="grid max-h-[320px] grid-cols-3 gap-1 overflow-y-auto overflow-x-visible rounded-xl border border-[rgba(94,111,130,0.12)] p-2">
             {STEP1_STYLE_OPTIONS.map((style) => (
               <Step1StyleMenuOption
                 key={style.id}

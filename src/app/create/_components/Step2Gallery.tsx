@@ -9,7 +9,7 @@ import CircularSparkleGenerateButton from "./CircularSparkleGenerateButton";
 import Step1FlipClock from "./Step1FlipClock";
 import WindowedMount from "./WindowedMount";
 import { emitToast } from "@/lib/ui/toast";
-import { copyImageToClipboard, copyImageToClipboardErrorMessage } from "@/lib/ui/copyImageToClipboard";
+import { copyImageToClipboard, toastForCopyImageOutcome } from "@/lib/ui/copyImageToClipboard";
 import { downloadImage } from "@/lib/ui/downloadImage";
 import { CREATE_STEP_INSET, CREATE_STEP_PAPER } from "./createStepShell";
 import { step1CircleBtnClass } from "./createToolbarCircleButton";
@@ -419,18 +419,13 @@ export default function Step2Gallery() {
                   title="复制图片到剪贴板"
                   onClick={async (e) => {
                     e.stopPropagation();
-                    const ok = await copyImageToClipboard(img.url);
-                    if (ok) {
+                    const outcome = await copyImageToClipboard(img.url);
+                    const toast = toastForCopyImageOutcome(outcome);
+                    if (outcome.ok) {
                       setCopiedId(img.id);
-                      emitToast({ message: "已复制图片到剪贴板", type: "success" });
                       window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
-                    } else {
-                      emitToast({
-                        message: copyImageToClipboardErrorMessage(),
-                        type: "error",
-                        durationMs: 2200,
-                      });
                     }
+                    emitToast({ ...toast, durationMs: outcome.ok ? undefined : 2200 });
                   }}
                   className={[
                     "absolute left-12 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full ring-1 backdrop-blur",
