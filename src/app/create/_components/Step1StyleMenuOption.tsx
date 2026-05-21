@@ -41,12 +41,12 @@ export default function Step1StyleMenuOption({
         aria-selected={selected}
         className={
           compact
-            ? `flex w-full items-center justify-between rounded-xl border px-2 py-2 text-left text-xs transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md ${
+            ? `flex w-full flex-col items-stretch gap-0.5 rounded-xl border px-2.5 py-2 text-left text-xs transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md ${
                 selected
                   ? "border-amber-300 bg-amber-50 font-semibold text-amber-900"
                   : "border-transparent bg-white text-[#363028]"
               }`
-            : `flex w-full items-center justify-between rounded-xl border border-transparent bg-white px-3 py-2 text-left text-sm shadow-sm transition-all duration-200 ease-out hover:-translate-y-1.5 hover:scale-[1.02] hover:shadow-lg ${
+            : `flex w-full flex-col items-stretch gap-0.5 rounded-xl border border-transparent bg-white px-3 py-2.5 text-left text-sm shadow-sm transition-all duration-200 ease-out hover:-translate-y-1.5 hover:scale-[1.02] hover:shadow-lg ${
                 selected ? "border-amber-300 bg-amber-50 font-semibold text-amber-900" : "text-[#363028]"
               }`
         }
@@ -56,12 +56,12 @@ export default function Step1StyleMenuOption({
         onFocus={showTooltip}
         onBlur={() => setHovered(false)}
       >
-        <span className="min-w-0 truncate">{style.label}</span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <span className={compact ? "text-[10px] opacity-60" : "text-[11px] opacity-60"}>
-            {style.labelEn}
-          </span>
-          {selected ? <span className="text-amber-700">{"\u2713"}</span> : null}
+        <span className="flex w-full items-start justify-between gap-1 leading-snug">
+          <span className="min-w-0 whitespace-normal break-words">{style.label}</span>
+          {selected ? <span className="shrink-0 text-amber-700">{"\u2713"}</span> : null}
+        </span>
+        <span className={compact ? "text-[10px] leading-tight opacity-60" : "text-[11px] leading-tight opacity-60"}>
+          {style.labelEn}
         </span>
       </button>
       {hovered && tooltipPos

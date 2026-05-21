@@ -1332,7 +1332,7 @@ export default function Step1Input() {
                 <div
                   role="listbox"
                   aria-label="选择风格参考"
-                  className={`${STEP1_STYLE_MENU_PANEL} w-[min(100vw-2rem,540px)] grid grid-cols-3 gap-1 p-2`}
+                  className={`${STEP1_STYLE_MENU_PANEL} w-[min(100vw-2rem,680px)] grid grid-cols-3 gap-1.5 p-2.5`}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {STEP1_STYLE_OPTIONS.map((style) => (

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  extractBase64FromGptImage2ImagesResponseForTest,
   extractImageBase64FromGenerateResponseForTest,
+  extractImageRefFromGptImage2ChatContentForTest,
   shouldRetryEmptyImageResponseForTest,
 } from "./AIService";
 
@@ -34,6 +36,22 @@ describe("LaoZhang NO_IMAGE response handling", () => {
         candidates: [{ finishReason: "NO_IMAGE", content: { parts: [] } }],
       })
     ).toBe(true);
+  });
+
+  it("extracts gpt-image-2 Images API b64_json", async () => {
+    const b64 = "aGVsbG8=";
+    await expect(
+      extractBase64FromGptImage2ImagesResponseForTest({ data: [{ b64_json: b64 }] })
+    ).resolves.toBe(b64);
+  });
+
+  it("extracts image ref from chat markdown and plain url", () => {
+    expect(
+      extractImageRefFromGptImage2ChatContentForTest("![img](https://cdn.example.com/a.png)")
+    ).toBe("https://cdn.example.com/a.png");
+    expect(
+      extractImageRefFromGptImage2ChatContentForTest("result: https://cdn.example.com/b.png done")
+    ).toBe("https://cdn.example.com/b.png");
   });
 
   it("does not retry when image is present", () => {

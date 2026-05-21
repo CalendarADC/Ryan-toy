@@ -71,12 +71,15 @@ export function laoZhangImageFailureUserHint(detail: string): string {
   if (d.includes("缺少老张") || d.includes("api key")) {
     return "请在 Step1 顶部填写老张 API Key，或在 .env 中配置 LAOZHANG_API_KEY。";
   }
+  if (d.includes("未找到图片") || d.includes("b64_json")) {
+    return "gpt-image-2 上游未返回可用图片。可改用 Banana pro/2 重试，或确认老张令牌分组支持 Images API（/v1/images/generations、/v1/images/edits）。";
+  }
   return "若持续失败，请检查老张 API Key、套餐额度，或稍后重试。";
 }
 
 export function laoZhangImageGenerateUrl(modelId: LaoZhangImageModelId): string {
   if (modelId === LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2) {
-    return `${LAOZHANG_OPENAI_BASE}/chat/completions`;
+    return `${LAOZHANG_OPENAI_BASE}/images/generations`;
   }
   return `${LAOZHANG_IMAGE_API_ORIGIN}/v1beta/models/${modelId}:generateContent`;
 }
@@ -232,9 +235,240 @@ function shouldRetryEmptyImageResponse(json: LaoZhangGenerateResponse): boolean 
   return candidates.length > 0;
 }
 
+type GptImage2ImagesResponse = {
+  data?: Array<{ b64_json?: string; url?: string }>;
+  error?: { message?: string };
+};
+
+function normalizeGptImage2B64Json(value: string): string {
+  let v = value.trim();
+  if (v.startsWith("data:")) {
+    const m = /^data:[^;]+;base64,([\s\S]*)$/.exec(v);
+    if (m?.[1]) v = m[1];
+  }
+  v = v.replace(/\s/g, "");
+  const pad = (4 - (v.length % 4)) % 4;
+  if (pad) v += "=".repeat(pad);
+  return v;
+}
+
+async function extractBase64FromGptImage2ImagesResponse(
+  json: GptImage2ImagesResponse
+): Promise<string | null> {
+  const item = json?.data?.[0];
+  if (!item) return null;
+  if (item.b64_json?.trim()) return normalizeGptImage2B64Json(item.b64_json);
+  if (item.url?.trim()) {
+    const fetched = await fetchImageToBase64(item.url.trim());
+    return fetched.base64;
+  }
+  return null;
+}
+
 function extractFirstImageUrlFromMarkdown(text: string): string | null {
-  const m = /!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i.exec(text);
-  return m?.[1] ?? null;
+  const md = /!\[[^\]]*]\((https?:\/\/[^)\s]+|data:image\/[^)\s]+)\)/i.exec(text);
+  if (md?.[1]) return md[1];
+  const plain = /(https?:\/\/[^\s)\]"'<>]+)/i.exec(text);
+  if (plain?.[1]) return plain[1];
+  const dataUrl = /(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/i.exec(text);
+  return dataUrl?.[1] ?? null;
+}
+
+function extractImageRefFromGptImage2ChatContent(content: unknown): string | null {
+  if (typeof content === "string") {
+    return extractFirstImageUrlFromMarkdown(content);
+  }
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as { type?: string; text?: string; image_url?: { url?: string } };
+      if (p.type === "image_url" && p.image_url?.url?.trim()) return p.image_url.url.trim();
+      if (p.type === "text" && p.text) {
+        const nested = extractImageRefFromGptImage2ChatContent(p.text);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  }
+  if (content && typeof content === "object") {
+    const o = content as Record<string, unknown>;
+    if (typeof o.url === "string" && o.url.trim()) return o.url.trim();
+    if (typeof o.b64_json === "string" && o.b64_json.trim()) return o.b64_json.trim();
+  }
+  return null;
+}
+
+async function resolveInitImageBlobForGptImage2Edits(url: string): Promise<Blob> {
+  if (url.startsWith("data:")) {
+    const { mimeType, base64 } = dataUrlToBase64(url);
+    const bytes = Buffer.from(base64, "base64");
+    return new Blob([bytes], { type: mimeType });
+  }
+  const fetched = await fetchImageToBase64(url);
+  const bytes = Buffer.from(fetched.base64, "base64");
+  const ext = fetched.mimeType.includes("jpeg") || fetched.mimeType.includes("jpg") ? "jpg" : "png";
+  return new Blob([bytes], { type: fetched.mimeType || `image/${ext}` });
+}
+
+function extensionForMime(mime: string): string {
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
+  if (mime.includes("webp")) return "webp";
+  return "png";
+}
+
+async function postLaoZhangGptImage2ImagesApi(
+  args: {
+    operation: "generate" | "edit";
+    prompt: string;
+    initImageDataUrls?: string[];
+  },
+  laozhangApiKey?: string
+): Promise<string> {
+  const apiKey = requireLaoZhangApiKey(laozhangApiKey);
+  const prefix =
+    args.operation === "generate" ? "gpt-image-2 图像生成失败" : "gpt-image-2 图像编辑失败";
+  const endpoint =
+    args.operation === "generate"
+      ? `${LAOZHANG_OPENAI_BASE}/images/generations`
+      : `${LAOZHANG_OPENAI_BASE}/images/edits`;
+
+  let lastStatus = 0;
+  let lastBody = "";
+  let lastNetworkError: unknown = null;
+
+  for (let attempt = 0; attempt < LAOZHANG_IMAGE_MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      if (args.operation === "generate") {
+        res = await fetchWithTimeout(
+          endpoint,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2,
+              prompt: args.prompt,
+            }),
+          },
+          LAOZHANG_HTTP_TIMEOUT_MS
+        );
+      } else {
+        const sourceUrl = args.initImageDataUrls?.[0]?.trim();
+        if (!sourceUrl) {
+          throw new Error("gpt-image-2 图生图缺少参考图。");
+        }
+        const blob = await resolveInitImageBlobForGptImage2Edits(sourceUrl);
+        const form = new FormData();
+        form.append("model", LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2);
+        form.append("prompt", args.prompt);
+        form.append("image", blob, `source.${extensionForMime(blob.type)}`);
+        res = await fetchWithTimeout(
+          endpoint,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: form,
+          },
+          LAOZHANG_HTTP_TIMEOUT_MS
+        );
+      }
+      lastNetworkError = null;
+    } catch (error) {
+      lastNetworkError = error;
+      const hasMoreAttempts = attempt < LAOZHANG_IMAGE_MAX_ATTEMPTS - 1;
+      if (hasMoreAttempts) {
+        await sleep(Math.min(90_000, LAOZHANG_RETRY_BASE_MS * Math.pow(2, attempt)));
+        continue;
+      }
+      const detail =
+        error instanceof Error
+          ? isAbortLikeError(error)
+            ? "上游接口响应超时（网络拥堵或服务繁忙）"
+            : error.message
+          : "请求上游接口失败";
+      throw new Error(`${prefix}：${detail}`);
+    }
+
+    if (res.ok) {
+      const json = (await res.json().catch(() => ({}))) as GptImage2ImagesResponse;
+      const b64 = await extractBase64FromGptImage2ImagesResponse(json);
+      if (b64) return b64;
+      throw new Error("gpt-image-2 Images API 返回中未找到 b64_json 或 url。");
+    }
+
+    lastStatus = res.status;
+    lastBody = await res.text().catch(() => "");
+    const retryable = res.status === 429 || res.status === 503 || res.status === 502;
+    const hasMoreAttempts = attempt < LAOZHANG_IMAGE_MAX_ATTEMPTS - 1;
+    if (!retryable || !hasMoreAttempts) {
+      const detail = parseLaoZhangErrorDetail(res.status, lastBody);
+      throw new Error(`${prefix}（HTTP ${res.status}）：${detail}`);
+    }
+    let waitMs = Math.min(180_000, LAOZHANG_RETRY_BASE_MS * Math.pow(2, attempt));
+    const ra = res.headers.get("retry-after");
+    if (ra) {
+      const sec = Number.parseInt(ra, 10);
+      if (!Number.isNaN(sec) && sec > 0) waitMs = Math.min(180_000, sec * 1000);
+    }
+    await sleep(Math.floor(waitMs * (0.85 + Math.random() * 0.3)));
+  }
+
+  if (lastNetworkError) {
+    const detail =
+      lastNetworkError instanceof Error
+        ? isAbortLikeError(lastNetworkError)
+          ? "上游接口响应超时（网络拥堵或服务繁忙）"
+          : lastNetworkError.message
+        : "请求上游接口失败";
+    throw new Error(`${prefix}：${detail}`);
+  }
+  const detail = parseLaoZhangErrorDetail(lastStatus, lastBody);
+  throw new Error(`${prefix}（HTTP ${lastStatus}）：${detail}`);
+}
+
+async function postLaoZhangGptImage2(args: {
+  operation: "generate" | "edit";
+  prompt: string;
+  initImageDataUrls?: string[];
+  laozhangApiKey?: string;
+}): Promise<string> {
+  try {
+    return await postLaoZhangGptImage2ImagesApi(args, args.laozhangApiKey);
+  } catch (imagesErr) {
+    try {
+      return await postLaoZhangOpenAiImageByChat(
+        args.operation === "generate"
+          ? {
+              model: LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2,
+              messages: [{ role: "user", content: args.prompt }],
+              stream: false,
+            }
+          : {
+              model: LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: args.prompt },
+                    ...(args.initImageDataUrls ?? []).map((url) => ({
+                      type: "image_url",
+                      image_url: { url },
+                    })),
+                  ],
+                },
+              ],
+              stream: false,
+            },
+        args.operation,
+        args.laozhangApiKey
+      );
+    } catch {
+      throw imagesErr instanceof Error ? imagesErr : new Error(String(imagesErr));
+    }
+  }
 }
 
 async function postLaoZhangOpenAiImageByChat(
@@ -284,14 +518,24 @@ async function postLaoZhangOpenAiImageByChat(
 
     if (res.ok) {
       const json = (await res.json().catch(() => ({}))) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{ message?: { content?: unknown } }>;
+        data?: Array<{ b64_json?: string; url?: string }>;
       };
-      const content = json?.choices?.[0]?.message?.content ?? "";
-      const imageUrl = typeof content === "string" ? extractFirstImageUrlFromMarkdown(content) : null;
-      if (!imageUrl) {
-        throw new Error("gpt-image-2 返回中未找到图片 URL。");
+      const fromImages = await extractBase64FromGptImage2ImagesResponse(json);
+      if (fromImages) return fromImages;
+
+      const content = json?.choices?.[0]?.message?.content;
+      const imageRef = extractImageRefFromGptImage2ChatContent(content);
+      if (!imageRef) {
+        throw new Error("gpt-image-2 返回中未找到图片（无 b64_json/url，Chat 正文亦无图链）。");
       }
-      const image = await fetchImageToBase64(imageUrl);
+      if (imageRef.startsWith("data:")) {
+        return dataUrlToBase64(imageRef).base64;
+      }
+      if (/^[A-Za-z0-9+/=\s]+$/.test(imageRef.replace(/\s/g, "")) && imageRef.length > 256) {
+        return normalizeGptImage2B64Json(imageRef);
+      }
+      const image = await fetchImageToBase64(imageRef);
       return image.base64;
     }
 
@@ -531,15 +775,11 @@ export async function laoZhangTextToImage(args: {
 }): Promise<string> {
   const modelId = args.laoZhangImageModel ?? LAOZHANG_IMAGE_MODEL_PRO;
   if (modelId === LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2) {
-    return postLaoZhangOpenAiImageByChat(
-      {
-        model: LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2,
-        messages: [{ role: "user", content: args.prompt }],
-        stream: false,
-      },
-      "generate",
-      args.laozhangApiKey
-    );
+    return postLaoZhangGptImage2({
+      operation: "generate",
+      prompt: args.prompt,
+      laozhangApiKey: args.laozhangApiKey,
+    });
   }
   const payload = {
     contents: [{ parts: [{ text: args.prompt }] }],
@@ -600,26 +840,12 @@ export async function laoZhangImagesToImage(args: {
     throw new Error("laoZhangImagesToImage: 至少需要一张参考图");
   }
   if (modelId === LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2) {
-    return postLaoZhangOpenAiImageByChat(
-      {
-        model: LAOZHANG_IMAGE_MODEL_GPT_IMAGE_2,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: args.prompt },
-              ...args.initImageDataUrls.map((url) => ({
-                type: "image_url",
-                image_url: { url },
-              })),
-            ],
-          },
-        ],
-        stream: false,
-      },
-      "edit",
-      args.laozhangApiKey
-    );
+    return postLaoZhangGptImage2({
+      operation: "edit",
+      prompt: args.prompt,
+      initImageDataUrls: args.initImageDataUrls,
+      laozhangApiKey: args.laozhangApiKey,
+    });
   }
 
   const imageParts: Array<{ inline_data: { mime_type: string; data: string } }> = [];
@@ -685,4 +911,14 @@ export function extractImageBase64FromGenerateResponseForTest(json: LaoZhangGene
 /** @internal vitest */
 export function shouldRetryEmptyImageResponseForTest(json: LaoZhangGenerateResponse) {
   return shouldRetryEmptyImageResponse(json);
+}
+
+/** @internal vitest */
+export function extractBase64FromGptImage2ImagesResponseForTest(json: GptImage2ImagesResponse) {
+  return extractBase64FromGptImage2ImagesResponse(json);
+}
+
+/** @internal vitest */
+export function extractImageRefFromGptImage2ChatContentForTest(content: unknown) {
+  return extractImageRefFromGptImage2ChatContent(content);
 }
