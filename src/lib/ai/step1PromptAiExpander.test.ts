@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildStep1ExpandStyleGuidanceBlock } from "@/lib/step1/step1StyleOptions";
+
 import {
   analyzeStep1ReferencesWithAi,
   buildStep1ExpandDisplayBackgroundClause,
@@ -25,6 +27,16 @@ import {
   step1ExpandDepthUsesThinking,
   isKimiStep1ExpandModel,
 } from "./step1PromptAiExpander";
+
+describe("buildStep1ExpandStyleGuidanceBlock", () => {
+  it("embeds style semantics and forbids template phrasing", () => {
+    const block = buildStep1ExpandStyleGuidanceBlock(["rococo", "洛可可"]);
+    expect(block).toContain("洛可可");
+    expect(block).toContain("柔美");
+    expect(block).toMatch(/禁止|勿单独堆/);
+    expect(block).toContain("旧模板");
+  });
+});
 
 describe("normalizeStep1ExpandedPromptDisplayBackground", () => {
   it("replaces random 展示背景 line with fixed clause for ring", () => {

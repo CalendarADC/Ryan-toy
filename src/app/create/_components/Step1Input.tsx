@@ -672,20 +672,12 @@ export default function Step1Input() {
     if (selectedStyles.length === 0) return;
     const styleLabels = selectedStyles
       .map((id) => STEP1_STYLE_OPTIONS.find((s) => s.id === id)?.label || id)
-      .join(" + ");
-    
-    const currentPrompt = prompt.trim();
-    const stylePrefix = `【${styleLabels}风格】`;
-    
-    if (!currentPrompt) {
-      setPrompt(stylePrefix);
-    } else if (!currentPrompt.includes("【")) {
-      setPrompt(`${stylePrefix} ${currentPrompt}`);
-    }
-    
-    setSelectedStyles([]);
+      .join("、");
     setToolbarMenuOpen(null);
-    requestAnimationFrame(() => syncPromptTextareaHeight());
+    emitToast({
+      type: "success",
+      message: `已确认 ${styleLabels}。点灯泡扩写时会把风格写进造型描述，不会套用「XX风格，设计主体是…」模板。`,
+    });
   };
 
   const persistPresets = (next: Step1Preset[]) => {
@@ -1358,7 +1350,7 @@ export default function Step1Input() {
                       className="w-full rounded-lg bg-amber-500 px-3 py-1.5 text-center text-xs font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40"
                       onClick={applyStylesToPrompt}
                     >
-                      应用到提示词
+                      确认风格选择
                     </button>
                   </div>
                 </div>

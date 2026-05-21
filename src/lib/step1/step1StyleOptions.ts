@@ -48,3 +48,32 @@ export function sanitizeStep1StyleIds(styleIds: string[]): string[] {
 export function styleLabelById(id: string): string {
   return STEP1_STYLE_OPTIONS.find((s) => s.id === id)?.label ?? id;
 }
+
+export function resolveStep1StyleOptionByLabelOrId(key: string): Step1StyleOption | undefined {
+  const t = key.trim();
+  if (!t) return undefined;
+  return (
+    STEP1_STYLE_OPTIONS.find((s) => s.id === t) ||
+    STEP1_STYLE_OPTIONS.find((s) => s.label === t) ||
+    STEP1_STYLE_OPTIONS.find((s) => s.labelEn === t)
+  );
+}
+
+/** 供 Step1 灯泡扩写：把所选风格转为「须用形态语言体现」的语义约束，而非套话标签 */
+export function buildStep1ExpandStyleGuidanceBlock(styleKeys: string[]): string {
+  if (!styleKeys.length) return "";
+  const lines = [
+    "用户已选风格（须在扩写正文中用造型、线条、纹样、比例、负空间与工艺气质体现；禁止仅罗列风格名或套用「XX风格，设计主体是…」旧模板）：",
+  ];
+  for (const key of styleKeys) {
+    const opt = resolveStep1StyleOptionByLabelOrId(key);
+    if (opt) {
+      lines.push(
+        `- ${opt.label}：${opt.desc}（把上述特征写进对主体元素与戒/坠结构的可见描述，勿单独堆「${opt.label}风格」口号）`
+      );
+    } else {
+      lines.push(`- ${key}`);
+    }
+  }
+  return lines.join("\n");
+}

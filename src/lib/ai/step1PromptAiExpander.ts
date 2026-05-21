@@ -5,6 +5,7 @@ import {
   STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
   STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
 } from "@/lib/ai/jewelrySoftLimits";
+import { buildStep1ExpandStyleGuidanceBlock } from "@/lib/step1/step1StyleOptions";
 
 /** 灯泡扩写：快速=关闭 Kimi 思考；深度=开启思考（质量更好、更慢） */
 export type Step1ExpandDepth = "fast" | "deep";
@@ -261,9 +262,8 @@ function buildReferenceVisionUserContent(args: {
     "必须写清：品类（戒指或吊坠）、金属材质与色泽、主体造型/纹样、镶嵌与配石、工艺细节、整体风格气质、建议的展示角度与光影。",
     "只描述一件首饰、一张主图；禁止 JSON、Markdown、编号列表、前后解释。",
   ];
-  if (args.selectedStyles?.length) {
-    lines.push(`用户已选风格参考：${args.selectedStyles.join("、")}。`);
-  }
+  const styleBlock = buildStep1ExpandStyleGuidanceBlock(args.selectedStyles ?? []);
+  if (styleBlock) lines.push(styleBlock);
   if (args.existingPrompt?.trim()) {
     lines.push(`用户当前草稿（请在其意图上补全，勿无关推翻）：${args.existingPrompt.trim()}`);
   }
@@ -743,7 +743,7 @@ export async function analyzeStep1ReferencesWithAi(args: {
     "- 描述适合电商主图的视角与光影（如正面、轻微 3/4、台面静物），但避免冗长布景堆砌。",
     "- 只描述一件首饰的一张主图；禁止一图多件、系列陈列。",
     "- 不要输出「展示背景：」固定句或灯泡扩写专用的格式套话；这是给生图模型直接阅读的工艺与造型描述。",
-    "- 若用户提供草稿文字或风格标签，在其意图上补全而非无关替换。",
+    "- 若用户提供草稿或风格标签：理解风格语义后，用造型/线条/纹样/比例等可见语言体现，禁止「XX风格，设计主体是YY」式套话。",
   ].join("\n");
 
   const content = await postStep1ExpandChat({
@@ -794,16 +794,18 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "LANGUAGE (HARD): The entire expanded output MUST be written in Simplified Chinese (简体中文).",
     "Do not write the expanded prompt primarily in English. You may keep short unavoidable tokens (e.g. 925, AU750, 4K, brand codes) inline where natural.",
     "",
-    "=== 强制开头格式（必须严格遵守）===",
-    "根据品类判断（戒指/吊坠），输出必须以以下格式开头：",
-    "- 戒指：设计一枚S925银戒指，【风格1融合风格2融合风格3】，设计主体是【设计元素】",
-    "- 吊坠：设计一枚S925银吊坠，【风格1融合风格2融合风格3】，设计主体是【设计元素】",
+    "=== 开头与叙事结构（必须严格遵守）===",
+    "根据品类（戒指/吊坠），第一句必须以「设计一枚S925银戒指，」或「设计一枚S925银吊坠，」起头。",
+    "起句之后须连续写成一体的造型与工艺描述：金属色泽、主体元素、外轮廓、纹样层次、镶嵌架构、线条节奏、负空间与整体气质，全部用可见形态语言表达。",
     "",
-    "例子：用户输入「向日葵戒指」选择哥特风+维多利亚哀悼风 → 开头必须为：设计一枚S925银戒指，哥特风融合维多利亚哀悼风格，设计主体是向日葵",
+    "=== 风格表达方式（硬性 — 区别于旧版风格套话）===",
+    "禁止套用旧格式：「【风格A融合风格B】，设计主体是【XX】」或「洛可可风格，设计主体是小狗」——不得先贴风格标签再单独填主体。",
+    "用户所选风格（若有）是美学约束：理解其线条、装饰密度、对称性、材质处理与时代气质，并转写进对戒指/吊坠与主题元素（动物、花卉、符号等）的具体描写中。",
+    "例：洛可可 + 小狗吊坠 → 宜写不对称卷草托举幼犬侧身、扇贝壳纹镂空底托、纤细 S 形脊线、轻浮献媚式曲线轮廓等；忌写「洛可可风格，设计主体是小狗」。",
+    "若用户原文已含风格词，同样转写为可见形态，勿原样堆叠风格标签。",
     "",
     "Task: 将用户输入改写为一段可直接用于 AI 生图的简体中文提示词（电商主图级清晰度）。",
     "保持用户原始主题与意图不变；不要擅自更换品类（戒指/吊坠等以用户与品类推断为准）。",
-    "风格词（如洛可可/哥特）仅作为特征来源，不得只输出风格标签口号；必须转写为具体可见的结构、线条与工艺表达。",
     "",
     "=== 反同质化规则（硬约束，必须全部满足）===",
     "1) 不改变品类与主体元素。",
@@ -862,12 +864,15 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "OUTPUT FORMAT: 只输出最终扩写后的中文提示词纯文本；禁止 JSON、Markdown、解释性前后缀。",
   ].join("\n");
 
+  const styleBlock = buildStep1ExpandStyleGuidanceBlock(args.selectedStyles ?? []);
   const user = [
     `品类（推断）: ${args.kind}`,
-    args.selectedStyles?.length ? `用户已选风格: ${args.selectedStyles.join(" + ")}` : "",
+    styleBlock,
     "用户原始提示:",
     args.prompt.trim(),
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const expandDepth = parseStep1ExpandDepth(args.expandDepth);
   const enableThinking = step1ExpandDepthUsesThinking(expandDepth);
