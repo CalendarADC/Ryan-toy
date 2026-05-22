@@ -11,6 +11,7 @@ import {
   MATERIAL_OPTIONS,
   RING_SIZE_ADAPTATION_OPTIONS,
   ringSizeAdaptationsLabel,
+  step1DesignObjectUsesRingSizeAdaptation,
   type Step1DiceStrength,
   type Step1DesignObject,
   type Step1Material,
@@ -96,8 +97,9 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
           .map((id) => MATERIAL_OPTIONS.find((o) => o.id === id)?.label)
           .filter(Boolean)
           .join("、") || "—",
-      ringSize:
-        designObject === "ring" ? ringSizeAdaptationsLabel(ringSizeAdaptations) : "（吊坠无需配置）",
+      ringSize: step1DesignObjectUsesRingSizeAdaptation(designObject)
+        ? ringSizeAdaptationsLabel(ringSizeAdaptations)
+        : `（${DESIGN_OBJECT_OPTIONS.find((o) => o.id === designObject)?.label ?? "当前品类"}无需配置戒指尺寸）`,
       dice: DICE_STRENGTH_OPTIONS.find((o) => o.id === diceStrength)?.label ?? "—",
     };
   }, [elements, styleIds, designObject, materials, ringSizeAdaptations, diceStrength]);
@@ -108,7 +110,7 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
     if (step === 0) return elements.length > 0;
     if (step === 1) return styleIds.length > 0;
     if (step === 3) return materials.length > 0;
-    if (step === 4) return designObject === "pendant" || ringSizeAdaptations.length > 0;
+    if (step === 4) return !step1DesignObjectUsesRingSizeAdaptation(designObject) || ringSizeAdaptations.length > 0;
     return true;
   };
 
@@ -235,9 +237,11 @@ export default function Step1PresetWizard({ open, mode, initial, onClose, onSave
 
         {step === 4 ? (
           <div>
-            {designObject === "pendant" ? (
+            {!step1DesignObjectUsesRingSizeAdaptation(designObject) ? (
               <p className="text-sm text-gray-600">
-                当前设计对象为吊坠/项链，无需配置戒指尺寸适配，可直接下一步。
+                当前设计对象为
+                {DESIGN_OBJECT_OPTIONS.find((o) => o.id === designObject)?.label ?? "非戒指"}
+                ，无需配置戒指尺寸适配，可直接下一步。
               </p>
             ) : (
               <>

@@ -126,6 +126,13 @@ describe("step1 presets import/export", () => {
     expect(merged[0]?.id).not.toBe(existing.id);
     expect(merged[1]?.id).toBe(existing.id);
   });
+
+  it("replaces list when current presets are empty", () => {
+    const incoming = [samplePreset(), { ...samplePreset(), id: "p2", name: "two" }];
+    const merged = mergeImportedStep1Presets([], incoming);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((p) => p.name)).toEqual(["test", "two"]);
+  });
 });
 
 describe("buildDicePrompt", () => {
@@ -160,5 +167,19 @@ describe("buildDicePrompt", () => {
     const prompt = buildDicePrompt(preset);
     expect(prompt).not.toContain("粗戒指");
     expect(prompt).toContain("吊坠");
+  });
+
+  it("builds choker object label without ring size clause", () => {
+    const preset: Step1Preset = {
+      ...samplePreset(),
+      designObject: "choker",
+      ringSizeAdaptations: ["thick_male"],
+      elements: ["海浪"],
+      styleIds: ["artNouveau"],
+    };
+    const prompt = buildDicePrompt(preset);
+    expect(prompt).toContain("贴颈项链（Choker）");
+    expect(prompt).not.toContain("粗戒指");
+    expect(prompt).toContain("海浪");
   });
 });

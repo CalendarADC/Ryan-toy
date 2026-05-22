@@ -26,6 +26,7 @@ import {
   buildStep1BatchMotifDiversityPreamble,
   buildStep1PerImageMotifVariantLine,
   buildDelicateRingMotifScaleIntegrationBlock,
+  buildGemCountHardLockBlock,
   buildZirconInlayAiColorMatchBlock,
   buildGlobalNegativePromptBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
@@ -259,6 +260,7 @@ export async function POST(req: Request) {
       : [basePromptWithBoosters, semanticExpansion, postAiExpandSinglePieceLock]
           .filter(Boolean)
           .join("\n\n");
+    const gemCountLockBlock = isReferenceEdit ? "" : buildGemCountHardLockBlock(boostedPrompt);
     const referencePreamble = isReferenceEdit
       ? buildReferenceEditInstructionBlock(refCount, prompt)
       : buildReferenceFusionBlock(refCount, prompt);
@@ -281,7 +283,8 @@ export async function POST(req: Request) {
           buildMaterialLightingBlock(promptLower, isSterling925),
           buildMainImageCompositionBlock(kind, prompt),
           kind === "ring" ? buildDelicateRingMotifScaleIntegrationBlock(prompt) : "",
-          buildZirconInlayAiColorMatchBlock(prompt, kind),
+          buildZirconInlayAiColorMatchBlock(prompt, kind, { expandedText: boostedPrompt }),
+          gemCountLockBlock,
           buildGlobalNegativePromptBlock(prompt, { pendantProductNoChain: kind === "pendant" }),
         ]
           .filter(Boolean)

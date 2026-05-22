@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { finalizeStep1ExpandedPrompt } from "./step1PromptAiExpander";
 import {
   buildDelicateRingMotifScaleIntegrationBlock,
+  buildGemCountHardLockBlock,
+  buildZirconInlayAiColorMatchBlock,
   getRingMotifShankScaleTier,
+  parseStatedTotalGemCount,
   STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
   STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
   userWantsDelicateThinWomensRing,
@@ -43,8 +46,10 @@ describe("ring motif/shank scale tier", () => {
 });
 
 describe("buildDelicateRingMotifScaleIntegrationBlock", () => {
-  it("returns mandatory phrase for tier only", () => {
-    expect(buildDelicateRingMotifScaleIntegrationBlock("细戒指")).toContain("1.2–1.6");
+  it("returns English-only reinforcement without duplicating Chinese mandatory line", () => {
+    const ultra = buildDelicateRingMotifScaleIntegrationBlock("细戒指");
+    expect(ultra).toContain("1.2–1.6");
+    expect(ultra).not.toContain("设计主题相对戒臂");
     expect(buildDelicateRingMotifScaleIntegrationBlock("中细戒指")).toContain("1.2–1.8");
     expect(buildDelicateRingMotifScaleIntegrationBlock("雄狮戒指")).toBe("");
   });
@@ -61,5 +66,35 @@ describe("finalizeStep1ExpandedPrompt", () => {
     const plain = finalizeStep1ExpandedPrompt("设计一枚银戒指。", "ring", "雄狮戒指");
     expect(plain).not.toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
     expect(plain).not.toContain(STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+  });
+
+  it("dedupes model paraphrase ratio and keeps one canonical line", () => {
+    const raw =
+      "设计一枚S925银戒指，细戒指适合女性日常佩戴，设计主题相对戒臂1.4倍，并强调肩线融合。爪镶香槟锆主石1颗。全件宝石共4颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里";
+    const out = finalizeStep1ExpandedPrompt(raw, "ring", "细戒 向日葵");
+    const matches = out.match(/设计主题相对戒臂/g) ?? [];
+    expect(matches).toHaveLength(1);
+    expect(out).toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+    expect(out).not.toMatch(/1\.4\s*倍/);
+  });
+});
+
+describe("parseStatedTotalGemCount / gem locks", () => {
+  it("parses 全件宝石共 N 颗", () => {
+    expect(parseStatedTotalGemCount("全件宝石共4颗、色号2种")).toBe(4);
+    expect(parseStatedTotalGemCount("无颗数声明")).toBeNull();
+  });
+
+  it("buildGemCountHardLockBlock only when count stated", () => {
+    expect(buildGemCountHardLockBlock("全件宝石共4颗")).toContain("exactly 4");
+    expect(buildGemCountHardLockBlock("无声明")).toBe("");
+  });
+
+  it("zircon block uses stated count instead of default 6", () => {
+    const block = buildZirconInlayAiColorMatchBlock("细戒 向日葵", "ring", {
+      expandedText: "全件宝石共4颗、色号2种",
+    });
+    expect(block).toContain("恰好 4 颗");
+    expect(block).not.toContain("不超过 6 颗");
   });
 });

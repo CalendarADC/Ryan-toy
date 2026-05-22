@@ -749,11 +749,25 @@ export default function Step1Input() {
     emitToast({ type: "success", message: "预设名称已更新。" });
   };
 
-  const handleImportPresets = (incoming: Step1Preset[]) => {
-    const merged = mergeImportedStep1Presets(presets, incoming);
-    persistPresets(merged);
-    emitToast({ type: "success", message: `已导入 ${incoming.length} 个预设方案。` });
-  };
+  const handleImportPresets = useCallback((incoming: Step1Preset[]) => {
+    if (!incoming.length) return;
+    setPresets((current) => {
+      const merged = mergeImportedStep1Presets(current, incoming);
+      saveStep1Presets(merged);
+      return merged;
+    });
+    const names = incoming.map((p) => p.name).filter(Boolean).join("、");
+    const countHint =
+      incoming.length > 1
+        ? `（JSON 内共 ${incoming.length} 项，已全部加入）`
+        : "";
+    emitToast({
+      type: "success",
+      message: names
+        ? `已导入：${names}${countHint}`
+        : `已导入 ${incoming.length} 个预设方案${countHint}`,
+    });
+  }, []);
 
   const handleDiceRoll = () => {
     if (!activePreset || isGenerating) return;

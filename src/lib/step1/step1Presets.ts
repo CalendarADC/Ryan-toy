@@ -6,7 +6,7 @@ export type Step1DiceStrength =
   | "dual_element_single_style"
   | "dual_element_dual_style";
 
-export type Step1DesignObject = "pendant" | "ring";
+export type Step1DesignObject = "pendant" | "ring" | "choker";
 export type Step1Material = "s925" | "brass" | "rose_gold";
 
 /** 戒指尺寸/佩戴适配：骰子随机一条，插入材质句与主题句之间 */
@@ -32,6 +32,7 @@ export const STEP1_ACTIVE_PRESET_STORAGE_KEY = "jewelry-step1-active-preset-v1";
 
 export const DESIGN_OBJECT_OPTIONS: { id: Step1DesignObject; label: string }[] = [
   { id: "pendant", label: "吊坠/项链" },
+  { id: "choker", label: "贴颈项链（Choker）" },
   { id: "ring", label: "戒指" },
 ];
 
@@ -113,7 +114,9 @@ export function normalizeStep1Preset(raw: unknown): Step1Preset | null {
   const o = raw as Record<string, unknown>;
   if (typeof o.id !== "string" || typeof o.name !== "string") return null;
   if (!Array.isArray(o.elements) || !Array.isArray(o.styleIds)) return null;
-  if (o.designObject !== "pendant" && o.designObject !== "ring") return null;
+  if (o.designObject !== "pendant" && o.designObject !== "ring" && o.designObject !== "choker") {
+    return null;
+  }
   const diceStrength = o.diceStrength;
   if (
     diceStrength !== "single_element_single_style" &&
@@ -312,8 +315,14 @@ export function createPresetId(): string {
 
 export function defaultPresetName(elements: string[], designObject: Step1DesignObject): string {
   const head = elements[0] ?? "未命名";
-  const obj = designObject === "ring" ? "戒指" : "吊坠";
+  const obj =
+    designObject === "ring" ? "戒指" : designObject === "choker" ? "贴颈项链" : "吊坠";
   return `${head}·${obj}`;
+}
+
+/** 是否需在预设中配置戒指尺寸适配 */
+export function step1DesignObjectUsesRingSizeAdaptation(designObject: Step1DesignObject): boolean {
+  return designObject === "ring";
 }
 
 export const STEP1_PRESETS_EXPORT_VERSION = 1;
@@ -386,5 +395,6 @@ export function preparePresetsForImport(incoming: Step1Preset[], existing: Step1
 
 export function mergeImportedStep1Presets(current: Step1Preset[], incoming: Step1Preset[]): Step1Preset[] {
   const prepared = preparePresetsForImport(incoming, current);
+  if (current.length === 0) return prepared;
   return [...prepared, ...current];
 }

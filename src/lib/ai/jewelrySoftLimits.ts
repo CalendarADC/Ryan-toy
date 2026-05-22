@@ -36,7 +36,7 @@ export function inferJewelryProductKind(prompt: string): JewelryProductKind {
   if (!pl) return "pendant";
 
   const pendantCue =
-    /(pendant|necklace|charm|bail|hanging loop|hanger|locket|amulet|chain|链条|吊坠|项链|吊饰|挂坠|cappy\s*calm|卡皮巴拉|\bcapybara\b)/i.test(
+    /(pendant|necklace|choker|charm|bail|hanging loop|hanger|locket|amulet|chain|链条|吊坠|项链|贴颈项链|颈链|吊饰|挂坠|cappy\s*calm|卡皮巴拉|\bcapybara\b)/i.test(
       pl
     );
 
@@ -462,15 +462,27 @@ export function mandatoryPhraseForRingMotifShankTier(tier: RingMotifShankScaleTi
     : STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE;
 }
 
-/** 扩写后处理：细戒/中细戒必须含对应比例整句 */
+/** 扩写正文中已出现的主题/戒臂比例句（含模型改写的 1.4倍 等） */
+const RING_MOTIF_SHANK_RATIO_LINE_RE =
+  /设计主题相对戒臂[^。；\n]{0,56}[。；]?|【戒指主题\/戒臂比例[^】]*】\s*/g;
+
+export function stripRingMotifShankRatioLines(text: string): string {
+  return text
+    .replace(RING_MOTIF_SHANK_RATIO_LINE_RE, "")
+    .replace(/[，、]{2,}/g, "，")
+    .replace(/[，、]\s*([。；\n])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** 扩写后处理：细戒/中细戒仅保留一条 canonical 比例整句（去掉重复或改写） */
 export function ensureStep1ExpandedRingMotifShankPhrase(
   expanded: string,
   tier: RingMotifShankScaleTier
 ): string {
   const phrase = mandatoryPhraseForRingMotifShankTier(tier);
-  const trimmed = expanded.trim();
+  const trimmed = stripRingMotifShankRatioLines(expanded);
   if (!trimmed) return phrase;
-  if (trimmed.includes(phrase)) return trimmed;
   const sep = /[。；]\s*$/.test(trimmed) ? "" : "。";
   return `${trimmed}${sep}${phrase}`;
 }
@@ -515,12 +527,34 @@ export function buildRingWomensOnModelLuxuryPresentationBlock(
 export function buildDelicateRingMotifScaleIntegrationBlock(prompt: string): string {
   const tier = getRingMotifShankScaleTier(prompt);
   if (!tier) return "";
-  const phrase = mandatoryPhraseForRingMotifShankTier(tier);
+  const ratioHint =
+    tier === "ultra-thin"
+      ? "theme mass ~1.2–1.6× band width"
+      : "theme mass ~1.2–1.8× band width";
   return [
-    "【戒指主题/戒臂比例（仅细戒·女戒或中细·中性戒触发）】",
-    phrase,
-    "RING MOTIF/SHANK (when triggered): obey the Chinese ratio line above; smooth shoulder integration; FORBID center-heavy 'big middle, thin sides' silhouette.",
-  ].join("\n");
+    "RING MOTIF/SHANK (fine band): obey the Chinese expansion ratio line once; smooth shoulder integration;",
+    `${ratioHint}; FORBID center-heavy 'big middle, thin sides' silhouette.`,
+  ].join(" ");
+}
+
+/** 从扩写/提示中解析「全件宝石共 N 颗」声明，供生图与扩写颗数对齐 */
+export function parseStatedTotalGemCount(text: string): number | null {
+  const m = /全件宝石共\s*(\d+)\s*颗/.exec(text);
+  if (!m) return null;
+  const n = Number.parseInt(m[1]!, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 6) return null;
+  return n;
+}
+
+/** 生图：扩写已声明颗数时，硬性锁定可见宝石总数（避免与「最多 6 颗」冲突） */
+export function buildGemCountHardLockBlock(expandedOrBoosted: string): string {
+  const n = parseStatedTotalGemCount(expandedOrBoosted);
+  if (!n) return "";
+  return [
+    "GEM COUNT LOCK (strict): the expansion text states exactly",
+    `${n} visible set stones total (main + all accents). Render at most ${n} — do NOT add extra melee on leaves, stem, or shank.`,
+    `禁止在画面中增加第 ${n + 1} 颗及以外的任何镶嵌石；叶脉/藤蔓/戒臂上不得「每片叶子一颗石」式加点。`,
+  ].join(" ");
 }
 
 /** 细戒专用全局负面补充（与 buildGlobalNegativePromptBlock 拼接） */
@@ -545,10 +579,17 @@ function userPromptSpecifiesNonZirconGemstoneForInlay(prompt: string): boolean {
  */
 export function buildZirconInlayAiColorMatchBlock(
   prompt: string,
-  kind: JewelryProductKind
+  kind: JewelryProductKind,
+  opts?: { maxVisibleGems?: number; expandedText?: string }
 ): string {
   if (kind !== "ring" && kind !== "pendant") return "";
   if (userPromptSpecifiesNonZirconGemstoneForInlay(prompt)) return "";
+  const stated =
+    opts?.maxVisibleGems ??
+    (opts?.expandedText ? parseStatedTotalGemCount(opts.expandedText) : null) ??
+    parseStatedTotalGemCount(prompt);
+  const maxGems = stated ?? 6;
+  const maxColors = 3;
   return [
     "【锆石配石 — 色泽由生图模型匹配（必须遵守）】",
     "主配石/点缀石材质为锆石（除非用户原文明确要求其它宝石）。",
@@ -557,10 +598,12 @@ export function buildZirconInlayAiColorMatchBlock(
     "ZIRCON COLOR (image model decides): match hue to motif + style + metal; avoid habitually rendering all stones colorless/white unless the design truly calls for it.",
     "",
     "【宝石数量与布局 — 必须遵守】",
-    "整件首饰可见镶嵌宝石总共不超过 6 颗；锆石/宝石颜色不超过 3 种。",
-    "禁止密排/连片/成排/成带镶、轨道或凹槽内连续小颗镶、花瓣/藤蔓/戒臂表面碎钻铺满（反例：一排蓝锆、满镶小花）。",
+    stated
+      ? `扩写已声明全件宝石共 ${stated} 颗：画面中可见镶嵌宝石必须**恰好 ${stated} 颗**，不得增加至 6 颗或「每叶一颗」式加点。`
+      : "整件首饰可见镶嵌宝石总共不超过 6 颗；锆石/宝石颜色不超过 3 种。",
+    "禁止密排/连片/成行/成带镶、轨道或凹槽内连续小颗镶、花瓣/藤蔓/戒臂表面碎钻铺满（反例：一排蓝锆、满镶小花）。",
     "须保留金属间隙，主石突出、配石稀疏；颗数与色号须与扩写一致，不得擅自增加宝石或颜色。",
-    "GEM COUNT (strict): at most 6 visible set stones total, at most 3 distinct stone colors; no pavé rows, channel-packed melee, or all-over micro-stone coverage.",
+    `GEM COUNT (strict): at most ${maxGems} visible set stones total, at most ${maxColors} distinct stone colors; no pavé rows, channel-packed melee, or all-over micro-stone coverage.`,
   ].join("\n");
 }
 

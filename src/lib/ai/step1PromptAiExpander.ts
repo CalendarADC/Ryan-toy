@@ -850,17 +850,18 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "ultra-thin"
       ? [
           "=== 细戒/女戒 — 主题与戒臂比例（仅此情况硬性）===",
-          `用户为细戒或女戒等：扩写正文必须**原样写入**：${STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
+          `用户为细戒或女戒等：扩写正文必须**原样写入一次**（禁止改写为「1.4倍」等其它数值，禁止第二条比例句）：${STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
           "",
         ]
       : []),
     ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "medium-thin"
       ? [
           "=== 中细戒/中性戒指 — 主题与戒臂比例（仅此情况硬性）===",
-          `用户为中细戒或中性戒指等：扩写正文必须**原样写入**：${STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
+          `用户为中细戒或中性戒指等：扩写正文必须**原样写入一次**（禁止改写、禁止重复）：${STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
           "",
         ]
       : []),
+    "宝石颗数：正文须写清「全件宝石共 N 颗」（主石+配石合计），且分项描述不得超出 N；禁止正文写 4 颗却在句中列举 6 处镶口。",
     "OUTPUT FORMAT: 只输出最终扩写后的中文提示词纯文本；禁止 JSON、Markdown、解释性前后缀。",
   ].join("\n");
 

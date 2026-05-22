@@ -195,6 +195,7 @@ function PresetMenuFooter({
   createLabel: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInFlightRef = useRef(false);
 
   const handleExport = () => {
     if (!presets.length) return;
@@ -213,6 +214,8 @@ function PresetMenuFooter({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
     try {
       const text = await file.text();
       const imported = parseStep1PresetsImportJson(text);
@@ -220,6 +223,8 @@ function PresetMenuFooter({
     } catch (err) {
       const message = err instanceof Error ? err.message : "导入失败，请重试。";
       onImportError(message);
+    } finally {
+      importInFlightRef.current = false;
     }
   };
 
@@ -251,7 +256,7 @@ function PresetMenuFooter({
           variant="outline"
           shape="full"
           onClick={() => fileInputRef.current?.click()}
-          title="从 JSON 文件导入预设（合并到当前列表）"
+          title="从 JSON 导入预设；列表为空时覆盖，已有项时合并到列表前部"
           className="h-[32px] shrink-0 px-2.5 text-xs"
         >
           导入
