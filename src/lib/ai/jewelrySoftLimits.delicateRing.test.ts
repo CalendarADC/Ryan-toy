@@ -68,14 +68,23 @@ describe("finalizeStep1ExpandedPrompt", () => {
     expect(plain).not.toContain(STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
   });
 
-  it("dedupes model paraphrase ratio and keeps one canonical line", () => {
+  it("removes trailing canonical ratio when body already states paraphrase", () => {
+    const raw =
+      "设计一枚S925银戒指，戒头以樱花枝为造型主体，体量相对戒臂 1.2-1.6 倍，肩线自戒圈两侧自然收拢融合于花簇底部，禁止中间大两侧小。爪镶香槟锆主石1颗。全件宝石共3颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里。[设计主题相对戒臂 1.2-1.6 倍，并强调肩线融合、禁止中间大两侧小]";
+    const out = finalizeStep1ExpandedPrompt(raw, "ring", "细戒 樱花");
+    expect(out).toContain("体量相对戒臂");
+    expect(out).not.toMatch(/\[设计主题相对戒臂/);
+    expect(out).not.toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+    expect(out.match(/设计主题相对戒臂/g) ?? []).toHaveLength(0);
+  });
+
+  it("appends canonical ratio only when body lacks any ratio mention", () => {
     const raw =
       "设计一枚S925银戒指，细戒指适合女性日常佩戴，设计主题相对戒臂1.4倍，并强调肩线融合。爪镶香槟锆主石1颗。全件宝石共4颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里";
     const out = finalizeStep1ExpandedPrompt(raw, "ring", "细戒 向日葵");
-    const matches = out.match(/设计主题相对戒臂/g) ?? [];
-    expect(matches).toHaveLength(1);
-    expect(out).toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
     expect(out).not.toMatch(/1\.4\s*倍/);
+    expect(out).toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+    expect((out.match(/设计主题相对戒臂/g) ?? []).length).toBe(1);
   });
 });
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildStep1ExpandStyleGuidanceBlock } from "@/lib/step1/step1StyleOptions";
 
+import { buildMainStoneCutExpandSystemBlock } from "./mainStoneCutPool";
 import {
   analyzeStep1ReferencesWithAi,
   buildStep1ExpandDisplayBackgroundClause,
@@ -35,6 +36,17 @@ describe("buildStep1ExpandStyleGuidanceBlock", () => {
     expect(block).toContain("柔美");
     expect(block).toMatch(/禁止|勿单独堆/);
     expect(block).toContain("旧模板");
+  });
+});
+
+describe("buildMainStoneCutExpandSystemBlock", () => {
+  it("includes 15-style pool and highlights selected fusion pair", () => {
+    const block = buildMainStoneCutExpandSystemBlock(["rococo", "artNouveau"]);
+    expect(block).toContain("【15 风格");
+    expect(block).toContain("【本次已选风格");
+    expect(block).toContain("【本次命中风格混搭");
+    expect(block).toContain("70%");
+    expect(block).toContain("17 项");
   });
 });
 

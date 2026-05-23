@@ -462,9 +462,31 @@ export function mandatoryPhraseForRingMotifShankTier(tier: RingMotifShankScaleTi
     : STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE;
 }
 
-/** 扩写正文中已出现的主题/戒臂比例句（含模型改写的 1.4倍 等） */
+/** 扩写正文中 canonical 比例句（含括号包裹的重复） */
 const RING_MOTIF_SHANK_RATIO_LINE_RE =
-  /设计主题相对戒臂[^。；\n]{0,56}[。；]?|【戒指主题\/戒臂比例[^】]*】\s*/g;
+  /\[?\s*设计主题相对戒臂[^。；\n\]]{0,56}[。；\]】]?\s*|【戒指主题\/戒臂比例[^】]*】\s*/g;
+
+function ringMotifShankRatioRangePattern(tier: RingMotifShankScaleTier): string {
+  return tier === "ultra-thin" ? "1\\.2\\s*[\\-–]\\s*1\\.6" : "1\\.2\\s*[\\-–]\\s*1\\.8";
+}
+
+/** 正文是否已写过主题/戒臂比例（含自然改写，如「体量相对戒臂 1.2–1.6 倍」） */
+export function hasRingMotifShankRatioMention(
+  text: string,
+  tier: RingMotifShankScaleTier
+): boolean {
+  const range = ringMotifShankRatioRangePattern(tier);
+  if (new RegExp(`(?:设计主题|体量|主题)相对戒臂\\s*${range}\\s*倍`, "i").test(text)) {
+    return true;
+  }
+  if (new RegExp(`相对戒臂\\s*${range}\\s*倍`, "i").test(text)) {
+    return true;
+  }
+  if (/禁止中间大两侧小/.test(text) && /(?:肩线|戒臂).{0,28}(?:融合|收拢)/.test(text)) {
+    return true;
+  }
+  return false;
+}
 
 export function stripRingMotifShankRatioLines(text: string): string {
   return text
@@ -475,7 +497,7 @@ export function stripRingMotifShankRatioLines(text: string): string {
     .trim();
 }
 
-/** 扩写后处理：细戒/中细戒仅保留一条 canonical 比例整句（去掉重复或改写） */
+/** 扩写后处理：细戒/中细戒比例要求只出现一次；正文已写则不再在结尾追加标准句 */
 export function ensureStep1ExpandedRingMotifShankPhrase(
   expanded: string,
   tier: RingMotifShankScaleTier
@@ -483,6 +505,9 @@ export function ensureStep1ExpandedRingMotifShankPhrase(
   const phrase = mandatoryPhraseForRingMotifShankTier(tier);
   const trimmed = stripRingMotifShankRatioLines(expanded);
   if (!trimmed) return phrase;
+  if (hasRingMotifShankRatioMention(trimmed, tier)) {
+    return trimmed;
+  }
   const sep = /[。；]\s*$/.test(trimmed) ? "" : "。";
   return `${trimmed}${sep}${phrase}`;
 }

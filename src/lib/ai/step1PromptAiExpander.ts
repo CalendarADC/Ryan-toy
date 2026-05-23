@@ -5,6 +5,7 @@ import {
   STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
   STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE,
 } from "@/lib/ai/jewelrySoftLimits";
+import { buildMainStoneCutExpandSystemBlock } from "@/lib/ai/mainStoneCutPool";
 import { buildStep1ExpandStyleGuidanceBlock } from "@/lib/step1/step1StyleOptions";
 
 /** 灯泡扩写：快速=关闭 Kimi 思考；深度=开启思考（质量更好、更慢） */
@@ -865,17 +866,19 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "禁止使用「镶嵌你认为颜色符合设计的锆石」等委托式空泛句式；禁止写列表外的颜色名（如淡粉锆石、玫瑰金锆等，应写「粉红锆」「香槟锆」等目录名）。",
     "禁止擅自将主配石改成钻石、红宝石、蓝宝石、祖母绿、翡翠、珍珠等，除非用户原文已明确指定。",
     "",
+    buildMainStoneCutExpandSystemBlock(args.selectedStyles ?? []),
+    "",
     ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "ultra-thin"
       ? [
           "=== 细戒/女戒 — 主题与戒臂比例（仅此情况硬性）===",
-          `用户为细戒或女戒等：扩写正文必须**原样写入一次**（禁止改写为「1.4倍」等其它数值，禁止第二条比例句）：${STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
+          `用户为细戒或女戒等：主题/戒臂比例要求**仅写一次**，可自然融入正文（如「体量相对戒臂 1.2–1.6 倍、肩线融合、禁止中间大两侧小」），禁止在结尾再次重复标准句或括号补充；禁止改写为「1.4倍」等其它数值。`,
           "",
         ]
       : []),
     ...(args.kind === "ring" && getRingMotifShankScaleTier(args.prompt) === "medium-thin"
       ? [
           "=== 中细戒/中性戒指 — 主题与戒臂比例（仅此情况硬性）===",
-          `用户为中细戒或中性戒指等：扩写正文必须**原样写入一次**（禁止改写、禁止重复）：${STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE}。`,
+          `用户为中细戒或中性戒指等：主题/戒臂比例要求**仅写一次**，可自然融入正文（如「体量相对戒臂 1.2–1.8 倍、肩线融合、禁止中间大两侧小」），禁止结尾重复标准句或括号补充。`,
           "",
         ]
       : []),
