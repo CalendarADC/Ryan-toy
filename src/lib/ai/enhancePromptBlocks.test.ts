@@ -5,6 +5,7 @@ import {
   getStep3GemstoneColorLockBlock,
 } from "./enhancePromptBlocks";
 import {
+  buildRingRearProductViewBlock,
   buildStep3MandatoryCameraOrbitBlock,
   buildStep3MultiViewTonePreservationBlock,
 } from "./jewelrySoftLimits";
@@ -24,6 +25,20 @@ describe("enhancePromptBlocks", () => {
     expect(left).toMatch(/MANDATORY CAMERA DELTA/i);
     expect(left).toMatch(/not.*same camera/i);
     expect(left).toMatch(/counterclockwise/i);
+  });
+
+  it("ring rear orbit mentions flat lay and shank back", () => {
+    const rear = buildStep3MandatoryCameraOrbitBlock("rear", "ring");
+    expect(rear).toMatch(/lay the ring flat/i);
+    expect(rear).toMatch(/through-hole/i);
+  });
+
+  it("ring rear product block forbids upright through-hole view", () => {
+    const block = buildRingRearProductViewBlock();
+    expect(block).toMatch(/flat on the display surface/i);
+    expect(block).toMatch(/rear shank exterior/i);
+    expect(block).toMatch(/through the finger opening/i);
+    expect(block).toMatch(/图2-class failure/i);
   });
 
   it("tone locks forbid adding yellow cast beyond init", () => {

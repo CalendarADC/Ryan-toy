@@ -385,22 +385,42 @@ export function buildStep3MultiViewTonePreservationBlock(): string {
 
 /** 强制机位与 init 可区分，避免 img2img 只微调光影却标签为左/右/正视图。 */
 export function buildStep3MandatoryCameraOrbitBlock(
-  shot: "left" | "right" | "rear" | "front"
+  shot: "left" | "right" | "rear" | "front",
+  kind?: JewelryProductKind
 ): string {
   const orbitHint =
     shot === "left"
       ? "orbit **counterclockwise** toward the piece's physical **LEFT** (~60°–110°)"
       : shot === "right"
         ? "orbit **clockwise** toward the physical **RIGHT** (~60°–110°)"
-        : shot === "rear"
-          ? "rotate to the **true back / rear** (~120°–180° from the hero face)"
-          : "square the camera to a **true frontal** hero (perpendicular to the display face)";
+        : shot === "rear" && kind === "ring"
+          ? "orbit to the **true rear / back** of the ring (~120°–180° from the hero face), then **lay the ring flat** so the **rear exterior of the shank** faces the lens — **not** an upright through-hole shot"
+          : shot === "rear"
+            ? "rotate to the **true back / rear** (~120°–180° from the hero face)"
+            : "square the camera to a **true frontal** hero (perpendicular to the display face)";
   return [
     `MANDATORY CAMERA DELTA (${shot.toUpperCase()} — non-negotiable): ${orbitHint}.`,
     "The output **must** be visibly different in **viewing bearing** from the init — a viewer should immediately see this is **not** the same camera position as the Step2 hero.",
     "If band ellipse, motif plane, and stone table read **the same** as the init (only polish/glare shifted), you **failed** — increase orbit until asymmetric lateral or rear/front cues dominate.",
     "Preserve SKU, stones, and session tone; **change camera only** — but the camera change must be **obvious**.",
   ].join(" ");
+}
+
+/**
+ * Step3 戒指后视图（方案 A）：放倒 + 戒圈背面/屁股朝镜头，对齐老张测试站图1。
+ * 禁止图2式「立起来、镜头正对戒圈内孔」的穿心视角。
+ */
+export function buildRingRearProductViewBlock(): string {
+  return [
+    "RING — REAR / BACK PRODUCT VIEW (strict — catalog flat-lay rear, NOT through-hole hero):",
+    "POSE (mandatory): Lay the ring **flat on the display surface** on its side — band axis roughly **horizontal**, weight on the table with believable contact shadow. **FORBID** balancing the ring **upright on the band edge** so the finger hole faces the lens like a donut (wrong pattern).",
+    "CAMERA (mandatory): Lens sights the **exterior rear / back wall of the shank** (band back / underside rear) **toward the viewer** — camera normal roughly aligned to that rear metal plane (within ~±10° yaw). Slight low product angle is OK.",
+    "HERO READ: The **rear shank exterior** dominates — closed back of gallery, hallmarks, sizing bar, spring seats, under-gallery struts, backs of prongs as appropriate. The decorative top may be partly occluded or seen from behind.",
+    "FINGER HOLE: May read as a **horizontal ellipse** at one side of frame from this rear bearing — **NOT** a near-perfect centered circle filling the composition (that indicates wrong upright through-hole framing).",
+    "FORBID WRONG REAR (图2-class failure): ring **standing on edge** with camera **looking straight through the finger opening**; symmetric circular hole centered like a tunnel; only thin shank rim around a round hole; top motif / stone table still squarely facing the lens like the init hero.",
+    "FORBID: second front hero, top-down plan view of the motif, or side-only band thickness without rear metal readable.",
+    "Keep identical design and stone count; reveal legitimate rear geometry only.",
+  ].join("\n");
 }
 
 /** 细戒 / 中细戒：主题相对戒臂的比例档位（Step1 扩写 + 生图软限制共用） */
@@ -676,12 +696,17 @@ export function buildSingleJewelryPieceOnlyConstraintBlock(): string {
   ].join("\n");
 }
 
+const RING_REAR_VIEW_NEGATIVE_LINES = [
+  "Ring rear-view negatives: NO upright ring on band edge with camera through finger hole; NO centered perfect circular hole dominating frame; NO donut/tunnel end-on composition; NO front stone table or animal face still squarely toward lens when rear was requested.",
+];
+
 const GLOBAL_NEGATIVE_TAIL_LINES = [
   "No corrosion artifacts: no rust patches, no green oxidation stains, no random tarnish spots, no peeling/plating loss, no uneven faded metal color unless explicitly requested by the user.",
   "For animal motifs: avoid lifeless/stiff expression, avoid statue-like frozen face, avoid dead-eye look, avoid rigid toy-like posture with no organic flow.",
   "For ring inner band: NO extra hole, NO inner-wall cutout, NO perforation slot, NO recessed cavity/pocket, NO inward dent/sink on the finger-contact interior surface.",
   "Ring inner-surface negatives: NO inner dent, NO inner dimple, NO inner groove, NO groove inside shank, NO concave trench on inner shank, NO inner ridge/bump/seam line, NO casting seam on finger-contact interior, NO inner engraving/inner text/inner filigree on the finger-contact inner loop.",
   "Perspective consistency negatives: NO mixed conflicting viewpoints in one product (e.g., face front-on while ring body is side profile), NO twisted impossible ring geometry, NO corkscrew deformation, NO physically contradictory camera projection.",
+  ...RING_REAR_VIEW_NEGATIVE_LINES,
 ];
 
 /**

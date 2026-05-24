@@ -16,6 +16,7 @@ import {
 import {
   buildEnhanceSoftLimitSuffix,
   buildPendantRearViewDefaultSolidBackBlock,
+  buildRingRearProductViewBlock,
   buildRingWomensOnModelLuxuryPresentationBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
   buildStep3MandatoryCameraOrbitBlock,
@@ -372,16 +373,7 @@ export async function POST(req: Request) {
           ].join("\n")
         : "";
 
-    const ringRearViewFullBlock =
-      kind === "ring"
-        ? [
-            "RING ? REAR / BACK VIEW (critical ? NOT another table-top hero):",
-            "The init is usually a **table / slightly elevated front or 3/4 hero** showing the top plane of the motif and stones. THIS output must show the **true rear / back of the piece**: back of gallery or bezel, under-gallery struts, closed back plate, inner shank hallmarks, sizing bar, or spring seats as appropriate.",
-            "**FORBID** an image that still reads as the **same primary face / stone table toward the camera** as the init (second front hero with only polish or glare changes). If the animal face or crown still **squarely faces the lens** like the main shot, you **failed**.",
-            "**REQUIRE** camera to favor **normals pointing away from the original front** (roughly 120?180?from the hero viewing direction): rear metal, backs of prongs, and believable back-of-motif geometry readable; the top motif may be partly occluded or seen from behind.",
-            "Keep identical design and stone count; do not invent a new character ? only reveal legitimate rear geometry.",
-          ].join("\n")
-        : "";
+    const ringRearViewFullBlock = kind === "ring" ? buildRingRearProductViewBlock() : "";
 
     /** 同一张 init 并发多路 img2img 时，部分上游易出现近似重复输出；顺序执行 + 明确 SHOT_KIND 降低串视角风险。 */
     const runOneShot = async (shot: () => Promise<GalleryImage>) => {
@@ -582,7 +574,7 @@ export async function POST(req: Request) {
       const editPrompt = withEnhanceSoftLimits(
         prompt,
         [
-          buildStep3MandatoryCameraOrbitBlock("rear"),
+          buildStep3MandatoryCameraOrbitBlock("rear", kind),
           `[SHOT_KIND: PRODUCT_REAR — request ${runNonce}_B]`,
           initToneLockInstruction,
           step3ToneLock,
