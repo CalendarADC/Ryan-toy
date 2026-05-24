@@ -6,6 +6,20 @@ This project now supports cloud-first deployment with:
 - Database: Neon Postgres
 - Image assets: Cloudflare R2
 
+## Vercel 发版（仅 Git 集成）
+
+**生产环境只通过 GitHub 推送触发 Vercel 自动构建与部署，不要使用 `vercel deploy` / `vercel deploy --prod`。**
+
+原因：CLI 会打包上传本地整个工作区（含 `node_modules`、`release-dist`、`.next` 等），体积可达 1GB+ 且很慢；Git 集成只拉仓库内已提交的文件，在 Vercel 云端执行 `npm install` + `next build`，与日常发版一致。
+
+推荐流程：
+
+1. 本地提交并推送到 `main`：`git push origin main`
+2. 在 [Vercel Dashboard](https://vercel.com) 查看对应项目（如 `gemmuse` / `gemmuse-main`）的 Production 部署状态
+3. 生产 URL 示例：`https://gemmuseai.vercel.app`（以项目实际域名为准）
+
+桌面安装包（`npm run desktop:build` → `release-dist/*.exe`）仅本地分发，不随 Web 部署上传。
+
 ## 1) Create cloud resources
 
 1. Create a Neon Postgres database and copy the connection string.

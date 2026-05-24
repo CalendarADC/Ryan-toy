@@ -466,20 +466,27 @@ export function mandatoryPhraseForRingMotifShankTier(tier: RingMotifShankScaleTi
 const RING_MOTIF_SHANK_RATIO_LINE_RE =
   /\[?\s*设计主题相对戒臂[^。；\n\]]{0,56}[。；\]】]?\s*|【戒指主题\/戒臂比例[^】]*】\s*/g;
 
-function ringMotifShankRatioRangePattern(tier: RingMotifShankScaleTier): string {
-  return tier === "ultra-thin" ? "1\\.2\\s*[\\-–]\\s*1\\.6" : "1\\.2\\s*[\\-–]\\s*1\\.8";
+const RING_MOTIF_SHANK_ANY_RATIO_MENTION_RE =
+  /(?:设计主题|体量|主题)相对戒臂\s*(?:约|大约)?\s*[\d.]+\s*倍|相对戒臂\s*(?:约|大约)?\s*[\d.]+\s*倍/i;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** 正文是否已写过主题/戒臂比例（含自然改写，如「体量相对戒臂 1.2–1.6 倍」） */
+function cleanupRingMotifShankRatioText(text: string): string {
+  return text
+    .replace(/[，、]{2,}/g, "，")
+    .replace(/[，、]\s*([。；\n])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** 正文是否已写过主题/戒臂比例（含「体量相对戒臂约1.4倍」等自然改写） */
 export function hasRingMotifShankRatioMention(
   text: string,
-  tier: RingMotifShankScaleTier
+  _tier?: RingMotifShankScaleTier
 ): boolean {
-  const range = ringMotifShankRatioRangePattern(tier);
-  if (new RegExp(`(?:设计主题|体量|主题)相对戒臂\\s*${range}\\s*倍`, "i").test(text)) {
-    return true;
-  }
-  if (new RegExp(`相对戒臂\\s*${range}\\s*倍`, "i").test(text)) {
+  if (RING_MOTIF_SHANK_ANY_RATIO_MENTION_RE.test(text)) {
     return true;
   }
   if (/禁止中间大两侧小/.test(text) && /(?:肩线|戒臂).{0,28}(?:融合|收拢)/.test(text)) {
@@ -489,27 +496,52 @@ export function hasRingMotifShankRatioMention(
 }
 
 export function stripRingMotifShankRatioLines(text: string): string {
-  return text
+  let t = text
     .replace(RING_MOTIF_SHANK_RATIO_LINE_RE, "")
-    .replace(/[，、]{2,}/g, "，")
-    .replace(/[，、]\s*([。；\n])/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(new RegExp(escapeRegExp(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE), "g"), "")
+    .replace(new RegExp(escapeRegExp(STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE), "g"), "");
+  // 展示背景固定句之后若又跟了一条比例标准句，整段去掉
+  const bgRe =
+    /(展示背景：根据设计，把(?:戒指|吊坠)放到你认为合适的展示背景里)([\s\S]*)$/;
+  const bgMatch = t.match(bgRe);
+  if (bgMatch) {
+    const tail = bgMatch[2] ?? "";
+    if (
+      RING_MOTIF_SHANK_RATIO_LINE_RE.test(tail) ||
+      /设计主题相对戒臂/.test(tail) ||
+      RING_MOTIF_SHANK_ANY_RATIO_MENTION_RE.test(tail)
+    ) {
+      t = bgMatch[1] ?? t;
+    }
+  }
+  return cleanupRingMotifShankRatioText(t);
 }
 
-/** 扩写后处理：细戒/中细戒比例要求只出现一次；正文已写则不再在结尾追加标准句 */
+function injectRingMotifShankRatioIntoOpening(text: string, phrase: string): string {
+  const ringOpen = text.match(/^设计一枚S925银戒指，/);
+  if (ringOpen) {
+    return text.replace(/^设计一枚S925银戒指，/, `设计一枚S925银戒指，${phrase}，`);
+  }
+  const pendantOpen = text.match(/^设计一枚S925银吊坠，/);
+  if (pendantOpen) {
+    return text.replace(/^设计一枚S925银吊坠，/, `设计一枚S925银吊坠，${phrase}，`);
+  }
+  return `${phrase}。${text}`;
+}
+
+/** 扩写后处理：比例要求只在正文出现一次；禁止在展示背景后再挂标准句 */
 export function ensureStep1ExpandedRingMotifShankPhrase(
   expanded: string,
   tier: RingMotifShankScaleTier
 ): string {
   const phrase = mandatoryPhraseForRingMotifShankTier(tier);
+  const hadRatio = hasRingMotifShankRatioMention(expanded, tier);
   const trimmed = stripRingMotifShankRatioLines(expanded);
   if (!trimmed) return phrase;
-  if (hasRingMotifShankRatioMention(trimmed, tier)) {
+  if (hadRatio) {
     return trimmed;
   }
-  const sep = /[。；]\s*$/.test(trimmed) ? "" : "。";
-  return `${trimmed}${sep}${phrase}`;
+  return injectRingMotifShankRatioIntoOpening(trimmed, phrase);
 }
 
 /**

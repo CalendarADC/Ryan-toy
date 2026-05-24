@@ -57,10 +57,19 @@ describe("buildDelicateRingMotifScaleIntegrationBlock", () => {
 
 describe("finalizeStep1ExpandedPrompt", () => {
   it("injects phrases only when tier matches", () => {
-    const ultra = finalizeStep1ExpandedPrompt("设计一枚银戒指。", "ring", "细戒");
+    const ultra = finalizeStep1ExpandedPrompt(
+      "设计一枚S925银戒指，主体是向日葵。",
+      "ring",
+      "细戒"
+    );
     expect(ultra).toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+    expect(ultra.indexOf(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE)).toBeLessThan(40);
 
-    const medium = finalizeStep1ExpandedPrompt("设计一枚银戒指。", "ring", "中性戒指");
+    const medium = finalizeStep1ExpandedPrompt(
+      "设计一枚S925银戒指，主体是向日葵。",
+      "ring",
+      "中性戒指"
+    );
     expect(medium).toContain(STEP1_MEDIUM_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
 
     const plain = finalizeStep1ExpandedPrompt("设计一枚银戒指。", "ring", "雄狮戒指");
@@ -78,13 +87,27 @@ describe("finalizeStep1ExpandedPrompt", () => {
     expect(out.match(/设计主题相对戒臂/g) ?? []).toHaveLength(0);
   });
 
-  it("appends canonical ratio only when body lacks any ratio mention", () => {
+  it("keeps body paraphrase and drops trailing canonical when model duplicates", () => {
     const raw =
-      "设计一枚S925银戒指，细戒指适合女性日常佩戴，设计主题相对戒臂1.4倍，并强调肩线融合。爪镶香槟锆主石1颗。全件宝石共4颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里";
+      "设计一枚S925银戒指，细雨丝主题，体量相对戒臂约1.4倍，肩线收拢。爪镶主石1颗。全件宝石共3颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里。设计主题相对戒臂 1.2-1.6 倍，并强调肩线融合、禁止中间大两侧小";
+    const out = finalizeStep1ExpandedPrompt(raw, "ring", "细戒 女戒");
+    expect(out).toMatch(/体量相对戒臂\s*约?\s*1\.4\s*倍/);
+    expect(out).not.toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
+    expect(out).not.toMatch(/设计主题相对戒臂/);
+    expect(out).toMatch(
+      /展示背景：根据设计，把戒指放到你认为合适的展示背景里\s*$/
+    );
+  });
+
+  it("injects canonical ratio into opening only when body lacks any ratio mention", () => {
+    const raw =
+      "设计一枚S925银戒指，细戒指适合女性日常佩戴，爪镶香槟锆主石1颗。全件宝石共4颗、色号2种。展示背景：根据设计，把戒指放到你认为合适的展示背景里";
     const out = finalizeStep1ExpandedPrompt(raw, "ring", "细戒 向日葵");
-    expect(out).not.toMatch(/1\.4\s*倍/);
     expect(out).toContain(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE);
-    expect((out.match(/设计主题相对戒臂/g) ?? []).length).toBe(1);
+    expect(out.indexOf(STEP1_ULTRA_THIN_RING_MOTIF_SHANK_MANDATORY_PHRASE)).toBeLessThan(80);
+    expect(out).not.toMatch(
+      /展示背景：根据设计，把戒指放到你认为合适的展示背景里.*设计主题相对戒臂/s
+    );
   });
 });
 
