@@ -13,8 +13,19 @@ import os from "node:os";
  */
 app.setPath("userData", join(app.getPath("appData"), "GemMuse"));
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 const DEFAULT_PORT = Number(process.env.NEXT_DESKTOP_PORT || "4310");
-const NEXT_URL = process.env.NEXT_DESKTOP_URL || `http://127.0.0.1:${DEFAULT_PORT}`;
+const PORT_SCAN_MAX = 20;
+let desktopListenPort = DEFAULT_PORT;
+let nextBaseUrl = process.env.NEXT_DESKTOP_URL || `http://127.0.0.1:${desktopListenPort}`;
+
+function syncNextBaseUrl(): void {
+  nextBaseUrl = process.env.NEXT_DESKTOP_URL || `http://127.0.0.1:${desktopListenPort}`;
+}
 
 let nextProcess: ChildProcess | null = null;
 let startingWindow: BrowserWindow | null = null;
@@ -59,7 +70,7 @@ function isDesktopPortListening(port: number): Promise<boolean> {
   });
 }
 
-/** 上次崩溃后内置 Next 子进程可能仍占用 4310，导致 EADDRINUSE。 */
+/** 上次崩溃后内置 Next 子进程可能仍占用端口，导致 EADDRINUSE。 */
 async function releaseStaleDesktopPort(port: number): Promise<void> {
   if (!(await isDesktopPortListening(port))) return;
   if (process.platform === "win32") {
@@ -72,13 +83,34 @@ async function releaseStaleDesktopPort(port: number): Promise<void> {
       ],
       { windowsHide: true },
     );
-    await new Promise((r) => setTimeout(r, 400));
+    spawnSync("cmd", ["/c", `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port} ^| findstr LISTENING') do taskkill /F /PID %a`], {
+      windowsHide: true,
+    });
+    await new Promise((r) => setTimeout(r, 500));
   }
+}
+
+async function resolveDesktopListenPort(): Promise<number> {
+  if (process.env.NEXT_DESKTOP_URL?.trim()) {
+    try {
+      const u = new URL(process.env.NEXT_DESKTOP_URL);
+      if (u.port) return Number(u.port);
+    } catch {
+      /* use scan */
+    }
+  }
+  for (let offset = 0; offset < PORT_SCAN_MAX; offset++) {
+    const port = DEFAULT_PORT + offset;
+    if (!(await isDesktopPortListening(port))) return port;
+    await releaseStaleDesktopPort(port);
+    if (!(await isDesktopPortListening(port))) return port;
+  }
+  return DEFAULT_PORT;
 }
 
 function desktopNextExitHint(logTail: string): string {
   if (/EADDRINUSE/i.test(logTail)) {
-    return `\n\n端口 ${DEFAULT_PORT} 已被占用（常见原因：上次 GemMuse 未正常退出）。\n请在任务管理器结束「GemMuseDesktop」相关进程后重试。`;
+    return `\n\n端口 ${desktopListenPort} 已被占用（常见原因：上次 GemMuse 未正常退出，或其它程序占用 ${DEFAULT_PORT} 起）。\n请在任务管理器结束「GemMuseDesktop」相关进程后重试。`;
   }
   if (/ENOTDIR/i.test(logTail) && /image to cache/i.test(logTail)) {
     return "\n\n内置 Next 无法写入 asar 内图片缓存。请安装最新桌面版（已禁用图片磁盘缓存）。";
@@ -156,7 +188,8 @@ function ensureDesktopNextAuthSecret(): void {
 function applyDesktopRuntimeDefaults(): void {
   if (!app.isPackaged) return;
   ensureDesktopNextAuthSecret();
-  process.env.NEXTAUTH_URL = NEXT_URL;
+  process.env.NEXTAUTH_URL = nextBaseUrl;
+  process.env.DESKTOP_STRICT_LOCAL = "1";
   if (!process.env.DESKTOP_LOCAL_IMAGE_STORAGE?.trim()) {
     process.env.DESKTOP_LOCAL_IMAGE_STORAGE = "1";
   }
@@ -320,7 +353,7 @@ function startBundledNextServer() {
       cwd: spawnCwdForBundledNext(standaloneDir),
       env: {
         ...envForBundledNodeChild(),
-        PORT: String(DEFAULT_PORT),
+        PORT: String(desktopListenPort),
         HOSTNAME: "127.0.0.1",
       },
       windowsHide: true,
@@ -329,11 +362,11 @@ function startBundledNextServer() {
   }
 
   const nextBin = require.resolve("next/dist/bin/next");
-  nextProcess = spawnBundledNodeChild([nextBin, "start", "-p", String(DEFAULT_PORT)], {
+  nextProcess = spawnBundledNodeChild([nextBin, "start", "-p", String(desktopListenPort)], {
     cwd: app.isPackaged ? dirname(process.execPath) : appRoot,
     env: {
       ...envForBundledNodeChild(),
-      PORT: String(DEFAULT_PORT),
+      PORT: String(desktopListenPort),
     },
     windowsHide: true,
   });
@@ -343,7 +376,7 @@ async function waitForBundledNextReady(timeoutMs = 120_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(NEXT_URL, { redirect: "manual" });
+      const res = await fetch(nextBaseUrl, { redirect: "manual" });
       if (res.ok || res.status === 302 || res.status === 307 || res.status === 308) return true;
       if (res.status === 404) return true;
     } catch {
@@ -398,34 +431,36 @@ function createWindow() {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(NEXT_URL)) {
+    if (!url.startsWith(nextBaseUrl)) {
       event.preventDefault();
       void shell.openExternal(url);
     }
   });
   win.webContents.on("did-fail-load", (_e, code, desc, url) => {
-    if (url.startsWith(NEXT_URL)) {
+    if (url.startsWith(nextBaseUrl)) {
       void dialog.showMessageBox(win, {
         type: "error",
         title: desktopAppLabel,
         message: "页面加载失败",
-        detail: `${desc}（错误码 ${code}）\n地址：${url}\n请确认本机未占用端口 ${DEFAULT_PORT}，且 .env 中数据库等配置正确。`,
+        detail: `${desc}（错误码 ${code}）\n地址：${url}\n请确认本机未占用端口 ${desktopListenPort}，且 .env 中数据库等配置正确。`,
       });
     }
   });
   win.once("ready-to-show", () => win.show());
-  void win.loadURL(NEXT_URL);
+  void win.loadURL(nextBaseUrl);
 }
 
 void app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   refreshDesktopAppLabel();
   registerDesktopIpcHandlers();
   loadPackagedDesktopEnv();
-  applyDesktopRuntimeDefaults();
   ensureGemmuseLocalMediaDir();
   if (shouldRunEmbeddedNextFromMain()) {
-    await releaseStaleDesktopPort(DEFAULT_PORT);
+    desktopListenPort = await resolveDesktopListenPort();
+    syncNextBaseUrl();
   }
+  applyDesktopRuntimeDefaults();
   showPackagedStartingWindow();
   startBundledNextServer();
   if (nextProcess) {
@@ -452,7 +487,7 @@ void app.whenReady().then(async () => {
     const ok = await waitForBundledNextReady();
     if (ok && startingWindow) {
       try {
-        await startingWindow.loadURL(`${NEXT_URL}/desktop-startup`);
+        await startingWindow.loadURL(`${nextBaseUrl}/desktop-startup`);
         await new Promise((r) => setTimeout(r, 2600));
       } catch {
         /* 自检页加载失败时仍继续进入主窗 */
@@ -464,8 +499,8 @@ void app.whenReady().then(async () => {
       const hint = desktopNextExitHint(tail);
       void dialog.showErrorBox(
         desktopAppLabel,
-        `本地服务在约 2 分钟内未就绪：${NEXT_URL}\n` +
-          `请检查端口 ${DEFAULT_PORT}、数据库与 .env。完整日志见：${nextServerLogPath()}${hint}\n\n` +
+        `本地服务在约 2 分钟内未就绪：${nextBaseUrl}\n` +
+          `请检查端口 ${desktopListenPort}、数据库与 .env。完整日志见：${nextServerLogPath()}${hint}\n\n` +
           (tail ? tail : "")
       );
     }
