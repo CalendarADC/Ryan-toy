@@ -8,17 +8,32 @@ type ObjectStorageConfig = {
   publicBaseUrl: string;
 };
 
+type ObjectStorageGateOptions = {
+  /**
+   * 默认 false：密钥模式下不使用对象存储。
+   * 对于 Kie 临时公网 URL 场景可显式放开。
+   */
+  allowInKeyOnlyAuth?: boolean;
+  /**
+   * 默认 false：桌面本地存图模式下不使用对象存储。
+   * 对于 Kie 临时公网 URL 场景可显式放开。
+   */
+  allowInDesktopLocalImageStorage?: boolean;
+};
+
 function envEnabled(v: string | undefined): boolean {
   if (!v) return false;
   const t = v.trim().toLowerCase();
   return t === "1" || t === "true" || t === "yes" || t === "on";
 }
 
-function getObjectStorageConfig(): ObjectStorageConfig | null {
+function getObjectStorageConfig(opts?: ObjectStorageGateOptions): ObjectStorageConfig | null {
   // 密钥 / 单机模式：图片仅存用户本机（浏览器或桌面目录），不上传 R2。
-  if (isKeyOnlyAuthEnabled()) return null;
+  if (isKeyOnlyAuthEnabled() && !opts?.allowInKeyOnlyAuth) return null;
   // 桌面版要求图片仅本地保存：显式关闭 R2 上传。
-  if (envEnabled(process.env.DESKTOP_LOCAL_IMAGE_STORAGE)) return null;
+  if (envEnabled(process.env.DESKTOP_LOCAL_IMAGE_STORAGE) && !opts?.allowInDesktopLocalImageStorage) {
+    return null;
+  }
 
   const endpoint = process.env.R2_ENDPOINT?.trim();
   const bucket = process.env.R2_BUCKET?.trim();
@@ -35,15 +50,32 @@ function getObjectStorageConfig(): ObjectStorageConfig | null {
 export async function uploadPngBase64ToObjectStorage(args: {
   base64: string;
   key: string;
+  gateOptions?: ObjectStorageGateOptions;
 }): Promise<{ url: string; objectKey: string } | null> {
-  const cfg = getObjectStorageConfig();
+  return uploadBinaryToObjectStorage({
+    bytes: Buffer.from(args.base64, "base64"),
+    key: args.key,
+    contentType: "image/png",
+    cacheControl: "public, max-age=31536000, immutable",
+    gateOptions: args.gateOptions,
+  });
+}
+
+export async function uploadBinaryToObjectStorage(args: {
+  bytes: Buffer | Uint8Array;
+  key: string;
+  contentType?: string;
+  cacheControl?: string;
+  gateOptions?: ObjectStorageGateOptions;
+}): Promise<{ url: string; objectKey: string } | null> {
+  const cfg = getObjectStorageConfig(args.gateOptions);
   if (!cfg) return null;
 
   const sdk = await import("@aws-sdk/client-s3").catch(() => null);
   if (!sdk) return null;
   const { PutObjectCommand, S3Client } = sdk;
 
-  const body = Buffer.from(args.base64, "base64");
+  const body = Buffer.isBuffer(args.bytes) ? args.bytes : Buffer.from(args.bytes);
   const client = new S3Client({
     region: "auto",
     endpoint: cfg.endpoint,
@@ -58,8 +90,8 @@ export async function uploadPngBase64ToObjectStorage(args: {
       Bucket: cfg.bucket,
       Key: args.key,
       Body: body,
-      ContentType: "image/png",
-      CacheControl: "public, max-age=31536000, immutable",
+      ContentType: args.contentType || "application/octet-stream",
+      CacheControl: args.cacheControl || "public, max-age=31536000, immutable",
     })
   );
 

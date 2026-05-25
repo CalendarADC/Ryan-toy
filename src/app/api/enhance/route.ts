@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import type { GalleryImage, GalleryImageType } from "@/store/jewelryGeneratorStore";
 
 import {
+  kieImageFailureUserHint,
+  kieImageToImage,
   laoZhangImageFailureUserHint,
   laoZhangImageToImage,
   resolveLaoZhangImageModelFromBanana,
@@ -31,10 +33,15 @@ import {
   type Step2WearGender,
 } from "@/lib/step2/step2WearGender";
 import { requireApiActiveUser } from "@/lib/apiAuth";
-import { resolveLaoZhangApiKeyFromRequest } from "@/lib/apiLaoZhangKey";
+import {
+  resolveImageApiVendorFromRequest,
+  resolveKieApiKeyFromRequest,
+  resolveLaoZhangApiKeyFromRequest,
+} from "@/lib/apiLaoZhangKey";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
 import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
+import { uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 export const runtime = "nodejs";
@@ -125,6 +132,9 @@ type Body = {
   bananaImageModel?: "banana-pro" | "banana-2";
   /** 与 x-laozhang-api-key 二选一；桌面内嵌时优先用 body */
   laozhangApiKey?: string;
+  /** 与 x-kie-api-key 二选一；桌面内嵌时优先用 body */
+  kieApiKey?: string;
+  imageApiVendor?: "laozhang" | "kie";
 };
 
 function makeGalleryImage({
@@ -150,6 +160,75 @@ function makeGalleryImage({
   };
 }
 
+function parseImageDataUrl(dataUrl: string): { mimeType: string; bytes: Buffer } | null {
+  const m = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl.trim());
+  if (!m) return null;
+  const mimeType = m[1]?.toLowerCase() || "image/png";
+  try {
+    const bytes = Buffer.from(m[2] || "", "base64");
+    if (!bytes.length) return null;
+    return { mimeType, bytes };
+  } catch {
+    return null;
+  }
+}
+
+function imageExtByMime(mimeType: string): string {
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("gif")) return "gif";
+  return "png";
+}
+
+function hostLooksLocal(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1";
+}
+
+async function uploadKieSourceImageToPublicUrl(args: {
+  sourceUrl: string;
+  userId: string;
+  taskId?: string;
+  requestUrl: string;
+}): Promise<string> {
+  let bytes: Buffer;
+  let mimeType = "image/png";
+  if (args.sourceUrl.startsWith("data:")) {
+    const parsed = parseImageDataUrl(args.sourceUrl);
+    if (!parsed) throw new Error("Kie 输入图片 data URL 无法解析。");
+    bytes = parsed.bytes;
+    mimeType = parsed.mimeType;
+  } else {
+    const source = /^https?:\/\//i.test(args.sourceUrl)
+      ? args.sourceUrl
+      : new URL(args.sourceUrl, args.requestUrl).toString();
+    const res = await fetch(source);
+    if (!res.ok) {
+      throw new Error(`读取 Kie 输入图失败（HTTP ${res.status}）。`);
+    }
+    const ct = res.headers.get("content-type")?.toLowerCase() || "";
+    mimeType = ct.startsWith("image/") ? ct : "image/png";
+    bytes = Buffer.from(await res.arrayBuffer());
+    if (!bytes.length) throw new Error("读取 Kie 输入图失败：空文件。");
+  }
+  const ext = imageExtByMime(mimeType);
+  const key = `temp/kie-inputs/${args.userId}/${args.taskId || "no-task"}/${Date.now()}_step3.${ext}`;
+  const uploaded = await uploadBinaryToObjectStorage({
+    bytes,
+    key,
+    contentType: mimeType,
+    cacheControl: "public, max-age=86400",
+    gateOptions: {
+      allowInKeyOnlyAuth: true,
+      allowInDesktopLocalImageStorage: true,
+    },
+  });
+  if (!uploaded?.url) {
+    throw new Error("Kie 需要临时公网 URL，但当前环境未启用对象存储上传。");
+  }
+  return uploaded.url;
+}
+
 export async function POST(req: Request) {
   const authz = await requireApiActiveUser(req);
   if (!authz.ok) return authz.response;
@@ -165,6 +244,7 @@ export async function POST(req: Request) {
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
   const taskIdRaw = typeof body.taskId === "string" ? body.taskId : "";
   const provider = typeof body.provider === "string" ? body.provider : "nano-banana-pro";
+  const imageApiVendor = resolveImageApiVendorFromRequest(req, body.imageApiVendor);
   const selectedMainImageId = typeof body.selectedMainImageId === "string" ? body.selectedMainImageId : "";
   const selectedMainImageUrl =
     typeof body.selectedMainImageUrl === "string" ? body.selectedMainImageUrl : "";
@@ -206,13 +286,34 @@ export async function POST(req: Request) {
     })) ?? undefined;
 
   /** Node ? fetch ???? URL?????????????? */
-  const resolvedMainImageUrl =
+  const resolvedMainImageUrlRaw =
     selectedMainImageUrl.startsWith("data:") ||
     /^https?:\/\//i.test(selectedMainImageUrl)
       ? selectedMainImageUrl
       : new URL(selectedMainImageUrl, req.url).toString();
 
     const laozhangApiKey = resolveLaoZhangApiKeyFromRequest(req, body.laozhangApiKey);
+    const kieApiKey = resolveKieApiKeyFromRequest(req, body.kieApiKey);
+    let resolvedMainImageUrl = resolvedMainImageUrlRaw;
+    if (imageApiVendor === "kie") {
+      let shouldUpload = resolvedMainImageUrlRaw.startsWith("data:");
+      if (!shouldUpload) {
+        try {
+          const u = new URL(resolvedMainImageUrlRaw);
+          shouldUpload = u.protocol !== "https:" || hostLooksLocal(u.hostname);
+        } catch {
+          shouldUpload = true;
+        }
+      }
+      if (shouldUpload) {
+        resolvedMainImageUrl = await uploadKieSourceImageToPublicUrl({
+          sourceUrl: resolvedMainImageUrlRaw,
+          userId: authz.user.id,
+          taskId: taskIdForPersist,
+          requestUrl: req.url,
+        });
+      }
+    }
 
     const images: GalleryImage[] = [];
     const runNonce = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -427,11 +528,20 @@ export async function POST(req: Request) {
       const debugPromptZh = `穿戴图 / On-model\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 = await laoZhangImageToImage({
-          initImageDataUrl: resolvedMainImageUrl,
-          prompt: editPrompt,
-          ...sharedImgArgs,
-        });
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgs,
+              });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
           taskId: taskIdForPersist,
@@ -483,11 +593,20 @@ export async function POST(req: Request) {
       const debugPromptZh = `左侧视图 / Left view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 = await laoZhangImageToImage({
-          initImageDataUrl: resolvedMainImageUrl,
-          prompt: editPrompt,
-          ...sharedImgArgsLeftRight,
-        });
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgsLeftRight,
+              });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
           taskId: taskIdForPersist,
@@ -539,11 +658,20 @@ export async function POST(req: Request) {
       const debugPromptZh = `右侧视图 / Right view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 = await laoZhangImageToImage({
-          initImageDataUrl: resolvedMainImageUrl,
-          prompt: editPrompt,
-          ...sharedImgArgsLeftRight,
-        });
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgsLeftRight,
+              });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
           taskId: taskIdForPersist,
@@ -601,11 +729,20 @@ export async function POST(req: Request) {
       const debugPromptZh = `后视图 / Rear view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 = await laoZhangImageToImage({
-          initImageDataUrl: resolvedMainImageUrl,
-          prompt: editPrompt,
-          ...sharedImgArgsProductOrbit,
-        });
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgsProductOrbit,
+              });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
           taskId: taskIdForPersist,
@@ -657,11 +794,20 @@ export async function POST(req: Request) {
       const debugPromptZh = `正视图 / Front view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 = await laoZhangImageToImage({
-          initImageDataUrl: resolvedMainImageUrl,
-          prompt: editPrompt,
-          ...sharedImgArgsProductOrbit,
-        });
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgsProductOrbit,
+              });
         const persisted = await persistGeneratedImage({
           userId: authz.user.id,
           taskId: taskIdForPersist,
@@ -694,7 +840,9 @@ export async function POST(req: Request) {
           : typeof e === "string" && e.trim()
             ? e
             : "????";
-    const hint = laoZhangImageFailureUserHint(message);
+    const hint = message.toLowerCase().includes("kie")
+      ? kieImageFailureUserHint(message)
+      : laoZhangImageFailureUserHint(message);
     return NextResponse.json({ message, hint }, { status: 500 });
   }
 }

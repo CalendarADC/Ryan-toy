@@ -899,6 +899,231 @@ export async function laoZhangImageToImage(args: {
   });
 }
 
+const KIE_BASE_URL = "https://api.kie.ai/api/v1";
+const KIE_MODEL = "nano-banana-pro";
+const KIE_POLL_INTERVAL_MS = 2200;
+const KIE_POLL_TIMEOUT_MS = 180_000;
+
+type KieCreateTaskResponse = {
+  code?: number;
+  msg?: string;
+  data?: { taskId?: string };
+};
+
+type KieRecordInfoResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    taskStatus?: "pending" | "processing" | "success" | "failed" | string;
+    response?: { resultUrls?: string[]; resultJson?: string };
+  };
+};
+
+function requireKieApiKey(kieApiKey?: string): string {
+  const k = kieApiKey?.trim();
+  if (!k) throw new Error("Missing Kie API key. Please set it in the key selector.");
+  return k;
+}
+
+function assertPublicImageUrls(urls: string[]): string[] {
+  const cleaned = urls.map((x) => x.trim()).filter(Boolean);
+  const invalid = cleaned.find((u) => !/^https?:\/\//i.test(u));
+  if (invalid) {
+    throw new Error("Kie image editing only supports public http/https image URLs.");
+  }
+  return cleaned;
+}
+
+function toKieResolution(v: ImageSize): "1K" | "2K" | "4K" {
+  if (v === "2K" || v === "4K") return v;
+  return "1K";
+}
+
+async function createKieTask(args: {
+  prompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  imageInputUrls?: string[];
+  kieApiKey?: string;
+}): Promise<string> {
+  const apiKey = requireKieApiKey(args.kieApiKey);
+  const payload = {
+    model: KIE_MODEL,
+    callBackUrl: "",
+    input: {
+      prompt: args.prompt,
+      image_input: assertPublicImageUrls(args.imageInputUrls ?? []),
+      aspect_ratio: args.aspectRatio,
+      output_format: "png",
+      resolution: toKieResolution(args.imageSize),
+    },
+  };
+  const res = await fetchWithTimeout(
+    `${KIE_BASE_URL}/jobs/createTask`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    LAOZHANG_HTTP_TIMEOUT_MS
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Kie createTask failed (HTTP ${res.status})${text ? `: ${text.slice(0, 220)}` : ""}`);
+  }
+  const data = (await res.json()) as KieCreateTaskResponse;
+  if (data.code && data.code !== 200) {
+    throw new Error(`Kie createTask failed: ${data.msg || `code=${data.code}`}`);
+  }
+  const taskId = data.data?.taskId?.trim();
+  if (!taskId) throw new Error("Kie createTask failed: missing taskId.");
+  return taskId;
+}
+
+function extractKieResultUrls(record: KieRecordInfoResponse): string[] {
+  const urls = record.data?.response?.resultUrls;
+  if (Array.isArray(urls) && urls.length) return urls.filter((x): x is string => typeof x === "string");
+  const raw = record.data?.response?.resultJson;
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as {
+      resultUrls?: unknown;
+      result_urls?: unknown;
+      images?: unknown;
+      output?: { images?: unknown };
+    };
+    const maybeUrlArrays = [parsed.resultUrls, parsed.result_urls, parsed.images, parsed.output?.images];
+    for (const arr of maybeUrlArrays) {
+      if (Array.isArray(arr) && arr.length) {
+        const extracted = arr.filter((x): x is string => typeof x === "string");
+        if (extracted.length) return extracted;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function isKieSuccessStatus(status: string): boolean {
+  return ["success", "succeeded", "completed", "done", "finish", "finished"].includes(status);
+}
+
+function isKieFailedStatus(status: string): boolean {
+  return ["failed", "fail", "error", "cancelled", "canceled"].includes(status);
+}
+
+async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<string> {
+  const apiKey = requireKieApiKey(kieApiKey);
+  const startedAt = Date.now();
+  let lastStatus = "";
+  let lastMsg = "";
+  while (Date.now() - startedAt < KIE_POLL_TIMEOUT_MS) {
+    const res = await fetchWithTimeout(
+      `${KIE_BASE_URL}/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+      LAOZHANG_HTTP_TIMEOUT_MS
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Kie recordInfo failed (HTTP ${res.status})${text ? `: ${text.slice(0, 220)}` : ""}`);
+    }
+    const data = (await res.json()) as KieRecordInfoResponse;
+    if (data.code && data.code !== 200) {
+      throw new Error(`Kie recordInfo failed: ${data.msg || `code=${data.code}`}`);
+    }
+    lastMsg = data.msg || "";
+    const status = (data.data?.taskStatus || "").toLowerCase();
+    if (status) lastStatus = status;
+    const resultUrls = extractKieResultUrls(data);
+    const firstUsable = resultUrls.find((x) => /^https?:\/\//i.test(x));
+    // 兼容上游状态值不一致：只要已返回可用 URL 就直接认为成功。
+    if (firstUsable) return firstUsable;
+    if (isKieSuccessStatus(status)) {
+      throw new Error("Kie task succeeded but returned no usable image URL.");
+    }
+    if (isKieFailedStatus(status)) {
+      throw new Error(`Kie task failed: ${data.msg || "upstream status=failed"}`);
+    }
+    await sleep(KIE_POLL_INTERVAL_MS);
+  }
+  throw new Error(`Kie task timed out (taskId=${taskId}, lastStatus=${lastStatus || "unknown"}, msg=${lastMsg || "n/a"}). Please retry.`);
+}
+
+async function fetchImageUrlAsBase64(url: string): Promise<string> {
+  const res = await fetchWithTimeout(url, {}, IMAGE_FETCH_TIMEOUT_MS);
+  if (!res.ok) throw new Error(`Failed to download Kie image (HTTP ${res.status}).`);
+  const arr = await res.arrayBuffer();
+  return Buffer.from(arr).toString("base64");
+}
+
+async function runKieNanoBanana(args: {
+  prompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  imageInputUrls?: string[];
+  kieApiKey?: string;
+}): Promise<string> {
+  const taskId = await createKieTask(args);
+  const resultUrl = await waitKieTaskResult(taskId, args.kieApiKey);
+  return fetchImageUrlAsBase64(resultUrl);
+}
+
+export async function kieTextToImage(args: {
+  prompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBanana(args);
+}
+
+export async function kieImageToImage(args: {
+  prompt: string;
+  initImageUrl: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBanana({
+    ...args,
+    imageInputUrls: [args.initImageUrl],
+  });
+}
+
+export async function kieImagesToImage(args: {
+  prompt: string;
+  initImageUrls: string[];
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBanana({
+    ...args,
+    imageInputUrls: args.initImageUrls,
+  });
+}
+
+export function kieImageFailureUserHint(detail: string): string {
+  const d = detail.toLowerCase();
+  if (d.includes("http/https") || d.includes("public")) {
+    return "Kie 图生图只支持公网可访问 URL，请改用云端图片地址或切回 LaoZhang。";
+  }
+  if (d.includes("timed out")) {
+    return "Kie 任务执行超时，请稍后重试。";
+  }
+  if (d.includes("api key")) {
+    return "请先在顶部密钥里切换到 Kie 并保存有效 API Key。";
+  }
+  return "Kie 生成失败，请检查密钥与网络后重试。";
+}
+
 export function toDataPng(base64: string) {
   return `data:image/png;base64,${base64}`;
 }

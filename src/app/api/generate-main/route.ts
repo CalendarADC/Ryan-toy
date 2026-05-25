@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
 import {
+  kieImageFailureUserHint,
+  kieImagesToImage,
+  kieTextToImage,
   laoZhangImageFailureUserHint,
   laoZhangImagesToImage,
   laoZhangTextToImage,
@@ -37,10 +40,15 @@ import {
   userExplicitEnvironmentOrSurfaceInPrompt,
 } from "@/lib/ai/jewelrySoftLimits";
 import { requireApiActiveUser } from "@/lib/apiAuth";
-import { resolveLaoZhangApiKeyFromRequest } from "@/lib/apiLaoZhangKey";
+import {
+  resolveImageApiVendorFromRequest,
+  resolveKieApiKeyFromRequest,
+  resolveLaoZhangApiKeyFromRequest,
+} from "@/lib/apiLaoZhangKey";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
 import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
+import { uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { buildCappyCalmCharacterLockBlock } from "@/lib/ip/cappyCalm";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
@@ -67,6 +75,9 @@ type Body = {
   cappyCalmLockPreset?: "s925" | "goldPlated" | "brass";
   /** 与 x-laozhang-api-key 二选一；桌面内嵌时优先用 body 更稳 */
   laozhangApiKey?: string;
+  /** 与 x-kie-api-key 二选一；桌面内嵌时优先用 body 更稳 */
+  kieApiKey?: string;
+  imageApiVendor?: "laozhang" | "kie";
 };
 
 /** 与 Step1 上传上限对齐；避免 Vercel 请求体过大导致 500 */
@@ -76,6 +87,59 @@ function isValidReferenceDataUrl(v: string): boolean {
   if (!v.startsWith("data:image/")) return false;
   if (v.length > MAX_REFERENCE_DATA_URL_CHARS) return false;
   return /;base64,/.test(v);
+}
+
+function parseImageDataUrl(dataUrl: string): { mimeType: string; bytes: Buffer } | null {
+  const m = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl.trim());
+  if (!m) return null;
+  const mimeType = m[1]?.toLowerCase() || "image/png";
+  const payload = m[2] || "";
+  try {
+    const bytes = Buffer.from(payload, "base64");
+    if (!bytes.length) return null;
+    return { mimeType, bytes };
+  } catch {
+    return null;
+  }
+}
+
+function imageExtByMime(mimeType: string): string {
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("gif")) return "gif";
+  return "png";
+}
+
+async function ensureKieReferenceUrls(args: {
+  referenceImageDataUrls: string[];
+  userId: string;
+  taskId: string;
+}): Promise<string[]> {
+  const uploaded: string[] = [];
+  for (let i = 0; i < args.referenceImageDataUrls.length; i++) {
+    const dataUrl = args.referenceImageDataUrls[i]!;
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed) {
+      throw new Error("Kie 参考图格式无效：仅支持 data:image/*;base64,...");
+    }
+    const ext = imageExtByMime(parsed.mimeType);
+    const key = `temp/kie-inputs/${args.userId}/${args.taskId}/${Date.now()}_${i}.${ext}`;
+    const uploadedItem = await uploadBinaryToObjectStorage({
+      bytes: parsed.bytes,
+      key,
+      contentType: parsed.mimeType,
+      cacheControl: "public, max-age=86400",
+      gateOptions: {
+        allowInKeyOnlyAuth: true,
+        allowInDesktopLocalImageStorage: true,
+      },
+    });
+    if (!uploadedItem?.url) {
+      throw new Error("Kie 参考图需要临时公网 URL，但当前环境未启用对象存储上传。");
+    }
+    uploaded.push(uploadedItem.url);
+  }
+  return uploaded;
 }
 
 export async function POST(req: Request) {
@@ -88,6 +152,7 @@ export async function POST(req: Request) {
   const countRaw = typeof body.count === "number" ? body.count : 2;
   const count = Math.min(5, Math.max(1, Math.floor(countRaw)));
   const provider = typeof body.provider === "string" ? body.provider : "nano-banana-pro";
+  const imageApiVendor = resolveImageApiVendorFromRequest(req, body.imageApiVendor);
   // 兼容旧版 fastMode（true → 2K, false → 4K），无 imageSize 时默认 1K
   const imageSizeRaw = body.imageSize as string | undefined;
   // @ts-expect-error fastMode 为旧版兼容字段，已由 imageSize 替代
@@ -148,12 +213,14 @@ export async function POST(req: Request) {
   }
 
   const laozhangApiKey = resolveLaoZhangApiKeyFromRequest(req, body.laozhangApiKey);
+  const kieApiKey = resolveKieApiKeyFromRequest(req, body.kieApiKey);
 
   // nano-banana-pro ????????????????????????/???
   const sampling =
     provider === "nano-banana-pro" ? { temperature: 1, topP: 0.85 } : undefined;
 
   const now = new Date().toISOString();
+
 
   const promptLower = prompt.toLowerCase();
   const isSterling925 = /(925|sterling silver|sterling)/.test(promptLower);
@@ -167,6 +234,14 @@ export async function POST(req: Request) {
 
   try {
     const images = [];
+    const kieReferenceImageUrls =
+      imageApiVendor === "kie" && referenceImageDataUrls.length
+        ? await ensureKieReferenceUrls({
+            referenceImageDataUrls,
+            userId: authz.user.id,
+            taskId,
+          })
+        : [];
     let aiExpandWarning: string | null = null;
     const isStandardMode = expansionStrength === "standard";
     const userEnvSurface = userExplicitEnvironmentOrSurfaceInPrompt(prompt);
@@ -359,25 +434,40 @@ export async function POST(req: Request) {
 
     const base64List = await Promise.all(
       step1PromptEntries.map((e) =>
-        refCount > 0
-          ? laoZhangImagesToImage({
-              initImageDataUrls: referenceImageDataUrls,
-              prompt: e.promptForThis,
-              aspectRatio,
-              imageSize,
-              sampling,
-              laoZhangImageModel,
-              laozhangApiKey,
-              promptAfterImages: isReferenceEdit,
-            })
-          : laoZhangTextToImage({
-              prompt: e.promptForThis,
-              aspectRatio,
-              imageSize,
-              sampling,
-              laoZhangImageModel,
-              laozhangApiKey,
-            })
+        imageApiVendor === "kie"
+          ? refCount > 0
+            ? kieImagesToImage({
+                initImageUrls: kieReferenceImageUrls,
+                prompt: e.promptForThis,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : kieTextToImage({
+                prompt: e.promptForThis,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+          : refCount > 0
+            ? laoZhangImagesToImage({
+                initImageDataUrls: referenceImageDataUrls,
+                prompt: e.promptForThis,
+                aspectRatio,
+                imageSize,
+                sampling,
+                laoZhangImageModel,
+                laozhangApiKey,
+                promptAfterImages: isReferenceEdit,
+              })
+            : laoZhangTextToImage({
+                prompt: e.promptForThis,
+                aspectRatio,
+                imageSize,
+                sampling,
+                laoZhangImageModel,
+                laozhangApiKey,
+              })
       )
     );
 
@@ -437,6 +527,9 @@ function generateMainFailureUserHint(detail: string): string {
   }
   if (d.includes("payload") || d.includes("too large") || d.includes("413")) {
     return "请求体过大（多为参考图过大），请压缩参考图或减少张数后重试。";
+  }
+  if (d.includes("缺少 kie") || d.includes("kie")) {
+    return kieImageFailureUserHint(detail);
   }
   if (d.includes("缺少老张") || d.includes("api key")) {
     return laoZhangImageFailureUserHint(detail);

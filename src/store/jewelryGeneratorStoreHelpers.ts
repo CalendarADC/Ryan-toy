@@ -17,6 +17,9 @@ export async function readHttpErrorMessage(res: Response): Promise<string> {
 
 export function friendlyFetchErrorMessage(e: unknown): string | undefined {
   if (!(e instanceof Error)) return undefined;
+  if (/kie task timed out/i.test(e.message)) {
+    return "Kie 任务轮询超时：Kie 后台可能仍在处理或已完成。请稍后重试，并在 Kie 日志里核对该任务状态。";
+  }
   if (e.name === "AbortError" || /aborted|timed out|timeout/i.test(e.message)) {
     return "请求超时：服务当前繁忙（数据库或上游生图接口拥堵）。请先将数量调为 1 并稍后重试。";
   }

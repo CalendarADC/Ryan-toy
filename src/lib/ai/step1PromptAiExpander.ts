@@ -25,12 +25,41 @@ export function isKimiStep1ExpandModel(model: string): boolean {
   return /kimi/i.test(model);
 }
 
+type CompanionElementPolicy = "auto_add_one" | "forbid_add" | "no_auto_add";
+
 type ExpandArgs = {
   prompt: string;
   kind: JewelryProductKind;
   selectedStyles?: string[];
   expandDepth?: Step1ExpandDepth;
 };
+
+const STEP1_SINGLE_ELEMENT_ONLY_RE =
+  /(?:仅仅?|只要|仅需|只需|仅用|只用|单独|唯一|纯粹|仅保留|只保留).{0,24}(?:以)?[^，。；\n]{1,20}(?:为)?(?:设计)?(?:主题|元素|图案|纹样)|(?:不要|不加|无需|不需要).{0,16}(?:其他|额外|第二|第二个).{0,6}(?:元素|主题|图案|纹样)|(?:仅|只)(?:一个|单一).{0,6}(?:元素|主题)/i;
+const STEP1_MULTI_ELEMENT_RE =
+  /(?:双元素|两个元素|两种元素|a\+b|A\+B)|(?:以|将)?[^，。；\n]{1,16}(?:和|与|及|以及|并|搭配|配合|\+|、|\/)[^，。；\n]{1,16}(?:作为|为)?(?:设计)?(?:主题|元素|图案|纹样|造型|灵感)/i;
+
+/** 用户是否明确强调「只要单一元素，不要任何辅助元素」。 */
+export function userPromptForcesSingleElementOnly(userPrompt: string): boolean {
+  return STEP1_SINGLE_ELEMENT_ONLY_RE.test(userPrompt);
+}
+
+/** 用户是否已明确输入双元素或多元素组合。 */
+export function userPromptIndicatesMultiDesignElements(userPrompt: string): boolean {
+  return STEP1_MULTI_ELEMENT_RE.test(userPrompt);
+}
+
+/**
+ * 自动辅助元素策略：
+ * - 单元素且未强调「仅此元素」 => 自动补 1 个辅助元素
+ * - 明确「仅此元素」 => 禁止补充
+ * - 已是多元素 => 不自动新增
+ */
+export function resolveCompanionElementPolicy(userPrompt: string): CompanionElementPolicy {
+  if (userPromptForcesSingleElementOnly(userPrompt)) return "forbid_add";
+  if (userPromptIndicatesMultiDesignElements(userPrompt)) return "no_auto_add";
+  return "auto_add_one";
+}
 
 export const STEP1_EXPAND_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
 export const STEP1_EXPAND_DEFAULT_MODEL = "ark-code-latest";
@@ -785,9 +814,16 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
   const { baseUrl, model, providerLabel, baseUrlHost } = resolveStep1ExpandRuntimeConfig();
   const expandDepth = parseStep1ExpandDepth(args.expandDepth);
   const enableThinking = step1ExpandDepthUsesThinking(expandDepth);
+  const companionPolicy = resolveCompanionElementPolicy(args.prompt);
   const lengthRule = enableThinking
     ? "当前扩写强度=深度：正文建议 6-8 句，约 220-320 字，细节更完整。"
     : "当前扩写强度=快速：正文建议 4-6 句，约 150-230 字，聚焦核心可见信息。";
+  const companionPolicyLine =
+    companionPolicy === "forbid_add"
+      ? "本次用户明确强调仅保留单一设计元素：严禁额外添加辅助元素，只能深化用户给定主元素。"
+      : companionPolicy === "auto_add_one"
+        ? "本次判定为单主元素输入：在不改变主元素前提下，必须自动新增且仅新增 1 个辅助元素，并明确其与主元素的结构衔接关系。"
+        : "本次输入已含多元素信号：禁止再自动新增辅助元素，避免主题堆叠。";
 
   const system = [
     "You are a senior jewelry concept prompt expander for Chinese-speaking users.",
@@ -817,6 +853,12 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "视觉锚点默认加入少量数字参考（至少 2 个锚点带数字）：优先使用重心位置(如右上三分之一区域)、主次面积占比、层级数量、疏密/实虚比例、宝石颗数与落点节奏。",
     "数字参考应服务理解而非堆参数：优先区间/比例/分区描述，避免逐项毫米化。",
     "形容词必须绑定可见依据：例如把「高级」落到金属处理/镶口秩序/比例控制；禁止空泛词堆砌。",
+    "",
+    "=== 主元素 + 辅助元素自动补全（硬约束）===",
+    companionPolicyLine,
+    "若允许自动补全辅助元素：辅助元素必须服务主元素，只能作为托举/边框/肩线/底纹/连接结构出现，禁止喧宾夺主或变成第二主命题。",
+    "必须明确写清主辅元素的衔接方式（例如连接位置、包裹关系、前后层次、体量占比），避免抽象拼贴与违和视觉效果。",
+    "禁止引入第 3 个新元素；禁止改变用户给定主元素、品类与核心风格意图。",
     "",
     "=== 反同质化规则（硬约束，必须全部满足）===",
     "1) 不改变品类与主体元素。",

@@ -169,17 +169,11 @@ describe("buildDicePrompt", () => {
     expect(prompt).toContain("吊坠");
   });
 
-  it("builds choker object label without ring size clause", () => {
-    const preset: Step1Preset = {
+  it("migrates legacy choker designObject to pendant on load", () => {
+    const loaded = normalizeStep1Preset({
       ...samplePreset(),
       designObject: "choker",
-      ringSizeAdaptations: ["thick_male"],
-      elements: ["海浪"],
-      styleIds: ["artNouveau"],
-    };
-    const prompt = buildDicePrompt(preset);
-    expect(prompt).toContain("贴颈项链（Choker）");
-    expect(prompt).not.toContain("粗戒指");
-    expect(prompt).toContain("海浪");
+    });
+    expect(loaded?.designObject).toBe("pendant");
   });
 });

@@ -33,8 +33,12 @@ import {
 } from "@/lib/runtime/desktopLocalMode";
 import { emitToast } from "@/lib/ui/toast";
 import {
-  hydrateLaozhangApiKeyFromIndexedDb,
+  hydrateImageApiKeysFromIndexedDb,
+  readClientImageApiVendor,
+  readClientKieApiKey,
   readClientLaozhangApiKey,
+  writeClientImageApiVendor,
+  writeClientKieApiKey,
   writeClientLaozhangApiKey,
 } from "@/lib/laozhangKeyClientStorage";
 
@@ -45,6 +49,7 @@ import type {
   GalleryImageSelector,
   GalleryImageType,
   GeneratorTask,
+  ImageApiVendor,
   JewelryGeneratorStore,
   MainImage,
   Step1ExpansionStrength,
@@ -71,6 +76,7 @@ export type {
   GalleryImageSelector,
   GalleryImageType,
   GeneratorTask,
+  ImageApiVendor,
   JewelryGeneratorStore,
   MainImage,
   Step1ExpansionStrength,
@@ -94,6 +100,22 @@ function writeScopedLaozhangApiKey(v: string): void {
   writeClientLaozhangApiKey(v);
 }
 
+function readScopedKieApiKey(): string {
+  return readClientKieApiKey();
+}
+
+function writeScopedKieApiKey(v: string): void {
+  writeClientKieApiKey(v);
+}
+
+function readScopedImageApiVendor(): ImageApiVendor {
+  return readClientImageApiVendor();
+}
+
+function writeScopedImageApiVendor(v: ImageApiVendor): void {
+  writeClientImageApiVendor(v);
+}
+
 type ApiError = {
   message?: string;
   hint?: string;
@@ -111,9 +133,15 @@ function shouldSyncServerTasks(): boolean {
   return true;
 }
 
-function jsonApiHeaders(laozhangApiKey?: string): HeadersInit {
+function jsonApiHeaders(args?: {
+  laozhangApiKey?: string;
+  kieApiKey?: string;
+  imageApiVendor?: ImageApiVendor;
+}): HeadersInit {
   const h = new Headers(withDesktopLocalHeader({ "Content-Type": "application/json" }));
-  if (laozhangApiKey?.trim()) h.set("x-laozhang-api-key", laozhangApiKey.trim());
+  if (args?.laozhangApiKey?.trim()) h.set("x-laozhang-api-key", args.laozhangApiKey.trim());
+  if (args?.kieApiKey?.trim()) h.set("x-kie-api-key", args.kieApiKey.trim());
+  if (args?.imageApiVendor) h.set("x-image-api-vendor", args.imageApiVendor);
   return h;
 }
 
@@ -141,6 +169,24 @@ function estimateDataUrlBytes(dataUrl: string): number {
 function getDataUrlMime(dataUrl: string): string {
   const m = /^data:([^;,]+)[;,]/i.exec(dataUrl);
   return m?.[1]?.toLowerCase() || "image/png";
+}
+
+function resolveImageApiAuth(args: {
+  imageApiVendor: ImageApiVendor;
+  laozhangApiKey: string;
+  kieApiKey: string;
+}): { imageApiVendor: ImageApiVendor; laozhangApiKey?: string; kieApiKey?: string; missingError?: string } {
+  const vendor = args.imageApiVendor === "kie" ? "kie" : "laozhang";
+  const laozhang = args.laozhangApiKey.trim() || readScopedLaozhangApiKey().trim();
+  const kie = args.kieApiKey.trim() || readScopedKieApiKey().trim();
+  if (vendor === "kie") {
+    if (!kie) return { imageApiVendor: vendor, missingError: "请先在顶部密钥中选择 Kie 并填写 API Key。" };
+    return { imageApiVendor: vendor, kieApiKey: kie, laozhangApiKey: laozhang || undefined };
+  }
+  if (!laozhang) {
+    return { imageApiVendor: vendor, missingError: "请先在顶部密钥中选择 LaoZhang 并填写 API Key。" };
+  }
+  return { imageApiVendor: vendor, laozhangApiKey: laozhang, kieApiKey: kie || undefined };
 }
 
 async function compressDataUrlForEnhanceTransport(dataUrl: string, maxBytes = 2_600_000): Promise<string> {
@@ -285,7 +331,9 @@ function pickTaskMeta(s: JewelryGeneratorStore): TaskWorkspaceMeta {
     step1ExpansionStrength: s.step1ExpansionStrength,
     step1ImageResolution: s.step1ImageResolution,
     step2ImageResolution: s.step2ImageResolution,
+    imageApiVendor: s.imageApiVendor,
     laozhangApiKey: s.laozhangApiKey,
+    kieApiKey: s.kieApiKey,
     selectedMainImageId: s.selectedMainImageId,
     selectedMainImageUrl: s.selectedMainImageUrl,
     selectedMainImageIds: s.selectedMainImageIds,
@@ -472,8 +520,15 @@ function buildSwitchedWorkspacePatch(
     step1ExpansionStrength: loaded.meta.step1ExpansionStrength,
     step1ImageResolution: loaded.meta.step1ImageResolution || "1K",
     step2ImageResolution: loaded.meta.step2ImageResolution || "1K",
+    imageApiVendor:
+      loaded.meta.imageApiVendor === "kie"
+        ? "kie"
+        : readScopedImageApiVendor() === "kie"
+          ? "kie"
+          : "laozhang",
     laozhangApiKey:
       readScopedLaozhangApiKey().trim() || (loaded.meta.laozhangApiKey ?? "").trim(),
+    kieApiKey: readScopedKieApiKey().trim() || (loaded.meta.kieApiKey ?? "").trim(),
     selectedMainImageId: derived.selectedMainImageId,
     selectedMainImageUrl: derived.primaryImg?.url ?? null,
     selectedMainImageIds: derived.selectedMainImageIds,
@@ -550,7 +605,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
       step1ExpansionStrength: "standard",
       step1ImageResolution: "1K",
       step2ImageResolution: "1K",
+      imageApiVendor: "laozhang",
       laozhangApiKey: "",
+      kieApiKey: "",
       step1ReferenceImageDataUrls: [],
 
       mainImages: [],
@@ -613,7 +670,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1ExpansionStrength: "standard",
           step1ImageResolution: "1K",
           step2ImageResolution: "1K",
+          imageApiVendor: "laozhang",
           laozhangApiKey: "",
+          kieApiKey: "",
           step1ReferenceImageDataUrls: [],
           mainImages: [],
           mainHistoryImages: [],
@@ -714,10 +773,38 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         const s = get();
         if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
       },
+      setImageApiVendor: (v) => {
+        const nextVendor: ImageApiVendor = v === "kie" ? "kie" : "laozhang";
+        writeScopedImageApiVendor(nextVendor);
+        set((state) => ({
+          imageApiVendor: nextVendor,
+          step1BananaImageModel:
+            nextVendor === "kie" && state.step1BananaImageModel !== "banana-pro"
+              ? "banana-pro"
+              : state.step1BananaImageModel,
+          step2BananaImageModel:
+            nextVendor === "kie" && state.step2BananaImageModel !== "banana-pro"
+              ? "banana-pro"
+              : state.step2BananaImageModel,
+        }));
+        const s = get();
+        const meta = pickTaskMeta(s);
+        void idbSet(taskKeys(s.activeTaskId).meta, meta).catch(() => undefined);
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, meta);
+      },
       setLaozhangApiKey: (v) => {
         const next = v.trim();
         writeScopedLaozhangApiKey(next);
         set({ laozhangApiKey: next });
+        const s = get();
+        const meta = pickTaskMeta(s);
+        void idbSet(taskKeys(s.activeTaskId).meta, meta).catch(() => undefined);
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, meta);
+      },
+      setKieApiKey: (v) => {
+        const next = v.trim();
+        writeScopedKieApiKey(next);
+        set({ kieApiKey: next });
         const s = get();
         const meta = pickTaskMeta(s);
         void idbSet(taskKeys(s.activeTaskId).meta, meta).catch(() => undefined);
@@ -758,7 +845,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1ExpansionStrength: "standard",
           step1ImageResolution: "1K",
           step2ImageResolution: "1K",
+          imageApiVendor: "laozhang",
           laozhangApiKey: "",
+          kieApiKey: "",
           step1ReferenceImageDataUrls: [],
           mainImages: [],
           mainHistoryImages: [],
@@ -822,6 +911,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         if (s.status.step1Generating || s.status.step3Generating || s.status.step4Generating) return;
         const taskId = s.activeTaskId;
         const preservedLaozhangKey = s.laozhangApiKey.trim() || readScopedLaozhangApiKey();
+        const preservedKieKey = s.kieApiKey.trim() || readScopedKieApiKey();
+        const preservedImageVendor = s.imageApiVendor ?? readScopedImageApiVendor();
         let loaded = await loadTaskFromIdb(taskId);
         const serverWorkspace = await fetchTaskWorkspaceFromServer(taskId);
         if (!serverWorkspace) return;
@@ -851,7 +942,12 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           : null;
         const laozhangKeyResolved =
           preservedLaozhangKey || (loaded.meta.laozhangApiKey ?? "").trim() || "";
+        const kieKeyResolved = preservedKieKey || (loaded.meta.kieApiKey ?? "").trim() || "";
+        const imageApiVendorResolved =
+          loaded.meta.imageApiVendor === "kie" || preservedImageVendor === "kie" ? "kie" : "laozhang";
         writeScopedLaozhangApiKey(laozhangKeyResolved);
+        writeScopedKieApiKey(kieKeyResolved);
+        writeScopedImageApiVendor(imageApiVendorResolved);
         set({
           provider: loaded.meta.provider,
           prompt: promptForTask || loaded.meta.prompt,
@@ -861,7 +957,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1ExpansionStrength: loaded.meta.step1ExpansionStrength,
           step1ImageResolution: loaded.meta.step1ImageResolution || "1K",
           step2ImageResolution: loaded.meta.step2ImageResolution || "1K",
+          imageApiVendor: imageApiVendorResolved,
           laozhangApiKey: laozhangKeyResolved,
+          kieApiKey: kieKeyResolved,
           selectedMainImageId,
           selectedMainImageUrl: primaryImg?.url ?? null,
           selectedMainImageIds,
@@ -878,7 +976,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           meta: {
             ...loaded.meta,
             prompt: promptForTask || loaded.meta.prompt,
+            imageApiVendor: imageApiVendorResolved,
             laozhangApiKey: laozhangKeyResolved,
+            kieApiKey: kieKeyResolved,
             selectedMainImageId,
             selectedMainImageUrl: primaryImg?.url ?? null,
             selectedMainImageIds,
@@ -934,6 +1034,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         const now = new Date().toISOString();
         const id = createdServerTaskId ?? newTaskId();
         const carryLaozhangKey = s.laozhangApiKey.trim() || readScopedLaozhangApiKey();
+        const carryKieKey = s.kieApiKey.trim() || readScopedKieApiKey();
+        const carryImageApiVendor = s.imageApiVendor ?? readScopedImageApiVendor();
         set({
           tasks: [
             ...s.tasks.map((t) =>
@@ -960,7 +1062,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1ExpansionStrength: "standard",
           step1ImageResolution: "1K",
           step2ImageResolution: "1K",
+          imageApiVendor: carryImageApiVendor,
           laozhangApiKey: carryLaozhangKey,
+          kieApiKey: carryKieKey,
           step1ReferenceImageDataUrls: [],
           mainImages: [],
           mainHistoryImages: [],
@@ -1123,6 +1227,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         const now = new Date().toISOString();
         const laozhangForNext =
           readScopedLaozhangApiKey().trim() || (loaded.meta.laozhangApiKey ?? "").trim();
+        const kieForNext = readScopedKieApiKey().trim() || (loaded.meta.kieApiKey ?? "").trim();
+        const imageApiVendorForNext =
+          loaded.meta.imageApiVendor === "kie" || readScopedImageApiVendor() === "kie"
+            ? "kie"
+            : "laozhang";
         set({
           tasks: nextTasks.map((t) => (t.id === nextId ? { ...t, updatedAt: now } : t)),
           activeTaskId: nextId,
@@ -1135,7 +1244,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1ExpansionStrength: loaded.meta.step1ExpansionStrength,
           step1ImageResolution: loaded.meta.step1ImageResolution || "1K",
           step2ImageResolution: loaded.meta.step2ImageResolution || "1K",
+          imageApiVendor: imageApiVendorForNext,
           laozhangApiKey: laozhangForNext,
+          kieApiKey: kieForNext,
           selectedMainImageId,
           selectedMainImageUrl: primaryImg?.url ?? null,
           selectedMainImageIds,
@@ -1153,7 +1264,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           meta: {
             ...loaded.meta,
             prompt: promptForNext || loaded.meta.prompt,
+            imageApiVendor: imageApiVendorForNext,
             laozhangApiKey: laozhangForNext,
+            kieApiKey: kieForNext,
             selectedMainImageId,
             selectedMainImageUrl: primaryImg?.url ?? null,
             selectedMainImageIds,
@@ -1268,7 +1381,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step1BananaImageModel,
           step1ExpansionStrength,
           step1ImageResolution,
+          imageApiVendor,
           laozhangApiKey,
+          kieApiKey,
           step1ReferenceImageDataUrls,
         } = get();
 
@@ -1276,9 +1391,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           set({ error: "请先填写设计提示词（Prompt）。" });
           return false;
         }
-        const effectiveLaozhangApiKey = laozhangApiKey.trim() || readScopedLaozhangApiKey();
-        if (!effectiveLaozhangApiKey) {
-          set({ error: "请先在 Step1 顶部填写老张 API Key。" });
+        const apiAuth = resolveImageApiAuth({ imageApiVendor, laozhangApiKey, kieApiKey });
+        if (apiAuth.missingError) {
+          set({ error: apiAuth.missingError });
           return false;
         }
 
@@ -1312,16 +1427,18 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           // { images: [{ id, url, createdAt? }, ...] }
           const res = await fetchJsonWithTimeout("/api/generate-main", {
             method: "POST",
-            headers: jsonApiHeaders(effectiveLaozhangApiKey),
+            headers: jsonApiHeaders(apiAuth),
             body: JSON.stringify({
               prompt,
               taskId: activeTaskId,
               count,
               provider,
+              imageApiVendor: apiAuth.imageApiVendor,
               bananaImageModel: step1BananaImageModel,
               imageSize: step1ImageResolution,
               expansionStrength: step1ExpansionStrength,
-              laozhangApiKey: effectiveLaozhangApiKey,
+              laozhangApiKey: apiAuth.laozhangApiKey,
+              kieApiKey: apiAuth.kieApiKey,
               ...(referenceImageDataUrls.length ? { referenceImageDataUrls } : {}),
               ...(cappyCalmLockPreset ? { cappyCalmLockPreset } : {}),
             }),
@@ -1487,7 +1604,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step2BananaImageModel,
           step1ExpansionStrength,
           step1ImageResolution,
+          imageApiVendor,
           laozhangApiKey,
+          kieApiKey,
           mainImages,
           step1ReferenceImageDataUrls,
         } = get();
@@ -1496,9 +1615,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           set({ error: "请先填写设计提示词（Prompt）。" });
           return;
         }
-        const effectiveLaozhangApiKey = laozhangApiKey.trim() || readScopedLaozhangApiKey();
-        if (!effectiveLaozhangApiKey) {
-          set({ error: "请先在 Step1 顶部填写老张 API Key。" });
+        const apiAuth = resolveImageApiAuth({ imageApiVendor, laozhangApiKey, kieApiKey });
+        if (apiAuth.missingError) {
+          set({ error: apiAuth.missingError });
           return;
         }
 
@@ -1519,16 +1638,18 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           // 只生成 1 张并替换该 id
           const res = await fetchJsonWithTimeout("/api/generate-main", {
             method: "POST",
-            headers: jsonApiHeaders(effectiveLaozhangApiKey),
+            headers: jsonApiHeaders(apiAuth),
             body: JSON.stringify({
               prompt,
               taskId: activeTaskId,
               count: 1,
               provider,
+              imageApiVendor: apiAuth.imageApiVendor,
               bananaImageModel: step2BananaImageModel,
               imageSize: step1ImageResolution,
               expansionStrength: step1ExpansionStrength,
-              laozhangApiKey: effectiveLaozhangApiKey,
+              laozhangApiKey: apiAuth.laozhangApiKey,
+              kieApiKey: apiAuth.kieApiKey,
               ...(referenceImageDataUrls.length ? { referenceImageDataUrls } : {}),
               ...(cappyCalmLockPreset ? { cappyCalmLockPreset } : {}),
             }),
@@ -1650,7 +1771,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           activeTaskId,
           step2ImageResolution,
           step2BananaImageModel,
+          imageApiVendor,
           laozhangApiKey,
+          kieApiKey,
           selectedMainImageIds,
           mainImages,
           mainHistoryImages,
@@ -1665,9 +1788,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           set({ error: "请先在 Step 2 选择至少一张主视图。" });
           return false;
         }
-        const effectiveLaozhangApiKey = laozhangApiKey.trim() || readScopedLaozhangApiKey();
-        if (!effectiveLaozhangApiKey) {
-          set({ error: "请先在 Step1 顶部填写老张 API Key。" });
+        const apiAuth = resolveImageApiAuth({ imageApiVendor, laozhangApiKey, kieApiKey });
+        if (apiAuth.missingError) {
+          set({ error: apiAuth.missingError });
           return false;
         }
         if (!onModel && !left && !right && !rear && !front) {
@@ -1719,14 +1842,16 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
               const enhanceTimeoutMs = computeEnhanceTimeoutMs(plan);
               const res = await fetchJsonWithTimeout("/api/enhance", {
                 method: "POST",
-                headers: jsonApiHeaders(effectiveLaozhangApiKey),
+                headers: jsonApiHeaders(apiAuth),
                 body: JSON.stringify({
                   provider,
+                  imageApiVendor: apiAuth.imageApiVendor,
                   taskId: activeTaskId,
                   prompt,
                   bananaImageModel: step2BananaImageModel,
                   imageSize: step2ImageResolution,
-                  laozhangApiKey: effectiveLaozhangApiKey,
+                  laozhangApiKey: apiAuth.laozhangApiKey,
+                  kieApiKey: apiAuth.kieApiKey,
                   selectedMainImageId: item.id,
                   selectedMainImageUrl,
                   onModel: plan.onModel,
@@ -1807,7 +1932,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           step2ImageResolution,
           step2BananaImageModel,
           step1ExpansionStrength,
+          imageApiVendor,
           laozhangApiKey,
+          kieApiKey,
           mainImages,
           mainHistoryImages,
           galleryImages,
@@ -1825,9 +1952,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           set({ error: "请先填写设计提示词（Prompt）。" });
           return;
         }
-        const effectiveLaozhangApiKey = laozhangApiKey.trim() || readScopedLaozhangApiKey();
-        if (!effectiveLaozhangApiKey) {
-          set({ error: "请先在 Step1 顶部填写老张 API Key。" });
+        const apiAuth = resolveImageApiAuth({ imageApiVendor, laozhangApiKey, kieApiKey });
+        if (apiAuth.missingError) {
+          set({ error: apiAuth.missingError });
           return;
         }
 
@@ -1874,16 +2001,18 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             const step1TimeoutMs = computeStep1TimeoutMs(1);
             const res = await fetchJsonWithTimeout("/api/generate-main", {
               method: "POST",
-              headers: jsonApiHeaders(effectiveLaozhangApiKey),
+              headers: jsonApiHeaders(apiAuth),
               body: JSON.stringify({
                 prompt,
                 taskId: activeTaskId,
                 count: 1,
                 provider,
+                imageApiVendor: apiAuth.imageApiVendor,
                 bananaImageModel: step2BananaImageModel,
                 imageSize: step1ImageResolution,
                 expansionStrength: step1ExpansionStrength,
-                laozhangApiKey: effectiveLaozhangApiKey,
+                laozhangApiKey: apiAuth.laozhangApiKey,
+                kieApiKey: apiAuth.kieApiKey,
                 ...(referenceImageDataUrls.length ? { referenceImageDataUrls } : {}),
                 ...(cappyCalmLockPreset ? { cappyCalmLockPreset } : {}),
               }),
@@ -1933,14 +2062,16 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
                 const enhanceTimeoutMs = computeEnhanceTimeoutMs(plan);
                 const enhanceRes = await fetchJsonWithTimeout("/api/enhance", {
                   method: "POST",
-                  headers: jsonApiHeaders(effectiveLaozhangApiKey),
+                  headers: jsonApiHeaders(apiAuth),
                   body: JSON.stringify({
                     provider,
+                    imageApiVendor: apiAuth.imageApiVendor,
                     taskId: activeTaskId,
                     prompt,
                     imageSize: step2ImageResolution,
                     bananaImageModel: step2BananaImageModel,
-                    laozhangApiKey: effectiveLaozhangApiKey,
+                    laozhangApiKey: apiAuth.laozhangApiKey,
+                    kieApiKey: apiAuth.kieApiKey,
                     selectedMainImageId: sourceMainImageId,
                     selectedMainImageUrl,
                     onModel: plan.onModel,
@@ -1996,14 +2127,16 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             const enhanceTimeoutMs = computeEnhanceTimeoutMs({ onModel, left, right, rear, front });
             const res = await fetchJsonWithTimeout("/api/enhance", {
               method: "POST",
-              headers: jsonApiHeaders(effectiveLaozhangApiKey),
+              headers: jsonApiHeaders(apiAuth),
               body: JSON.stringify({
                 provider,
+                imageApiVendor: apiAuth.imageApiVendor,
                 taskId: activeTaskId,
                 prompt,
                 bananaImageModel: step2BananaImageModel,
                 imageSize: step2ImageResolution,
-                laozhangApiKey: effectiveLaozhangApiKey,
+                laozhangApiKey: apiAuth.laozhangApiKey,
+                kieApiKey: apiAuth.kieApiKey,
                 selectedMainImageId: sourceMainImageId,
                 selectedMainImageUrl,
                 onModel,
@@ -2290,7 +2423,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         try {
           const res = await fetch("/api/generate-copy", {
             method: "POST",
-            headers: jsonApiHeaders(effectiveLaozhangApiKey),
+            headers: jsonApiHeaders({ laozhangApiKey: effectiveLaozhangApiKey }),
             body: JSON.stringify({
               provider,
               taskId: activeTaskId,
@@ -2402,7 +2535,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           void (async () => {
             let hydrationDbApplied = false;
             try {
-              await hydrateLaozhangApiKeyFromIndexedDb();
+              await hydrateImageApiKeysFromIndexedDb();
               const s0 = useJewelryGeneratorStore.getState();
             let activeId = s0.activeTaskId;
             if (!s0.tasks.some((t) => t.id === activeId)) {
@@ -2479,10 +2612,22 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             const idbLaozhangKey = (loaded.meta.laozhangApiKey ?? "").trim();
             const memLaozhangKey = snapForApiKey.laozhangApiKey.trim();
             const lsLaozhangKey = readScopedLaozhangApiKey().trim();
+            const idbKieKey = (loaded.meta.kieApiKey ?? "").trim();
+            const memKieKey = snapForApiKey.kieApiKey.trim();
+            const lsKieKey = readScopedKieApiKey().trim();
+            const idbVendor = loaded.meta.imageApiVendor === "kie" ? "kie" : "laozhang";
+            const memVendor = snapForApiKey.imageApiVendor === "kie" ? "kie" : "laozhang";
+            const lsVendor = readScopedImageApiVendor() === "kie" ? "kie" : "laozhang";
             /* 用户刚点的「保存」只保证内存 + localStorage；IDB 可能仍是旧快照。优先 mem，再全局 LS，再 IDB。 */
             const laozhangKeyResolved =
               memLaozhangKey || lsLaozhangKey || idbLaozhangKey || "";
+            const kieKeyResolved = memKieKey || lsKieKey || idbKieKey || "";
+            const imageApiVendorResolved = memVendor === "kie" || lsVendor === "kie" || idbVendor === "kie"
+              ? "kie"
+              : "laozhang";
             writeScopedLaozhangApiKey(laozhangKeyResolved);
+            writeScopedKieApiKey(kieKeyResolved);
+            writeScopedImageApiVendor(imageApiVendorResolved);
             useJewelryGeneratorStore.setState({
               provider: loaded.meta.provider,
               prompt: promptResolved,
@@ -2492,7 +2637,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
               step1ExpansionStrength: loaded.meta.step1ExpansionStrength,
               step1ImageResolution: loaded.meta.step1ImageResolution || "1K",
               step2ImageResolution: loaded.meta.step2ImageResolution || "1K",
+              imageApiVendor: imageApiVendorResolved,
               laozhangApiKey: laozhangKeyResolved,
+              kieApiKey: kieKeyResolved,
               selectedMainImageId: loaded.meta.selectedMainImageId,
               selectedMainImageUrl: loaded.meta.selectedMainImageUrl,
               selectedMainImageIds: loaded.meta.selectedMainImageIds,
@@ -2530,16 +2677,19 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
 );
 
 // persist 从 `jewelry-generator-v3` 合并完成后立刻执行；早于下方 IndexedDB 异步 hydration，
-// 把已写入 `jewelry-laozhang-api-key-v2` 的密钥灌回 Zustand，避免首屏长时间「未激活」。
+// 把已写入本地的供应商/密钥灌回 Zustand，避免首屏长时间「未激活」。
 if (typeof window !== "undefined") {
   useJewelryGeneratorStore.persist.onFinishHydration(() => {
-    void hydrateLaozhangApiKeyFromIndexedDb().then(() => {
-      const fromLs = readScopedLaozhangApiKey().trim();
-      if (!fromLs) return;
-      const cur = useJewelryGeneratorStore.getState().laozhangApiKey.trim();
-      if (!cur) {
-        useJewelryGeneratorStore.setState({ laozhangApiKey: fromLs });
-      }
+    void hydrateImageApiKeysFromIndexedDb().then(() => {
+      const fromLaozhang = readScopedLaozhangApiKey().trim();
+      const fromKie = readScopedKieApiKey().trim();
+      const fromVendor = readScopedImageApiVendor();
+      const cur = useJewelryGeneratorStore.getState();
+      useJewelryGeneratorStore.setState({
+        imageApiVendor: cur.imageApiVendor || fromVendor,
+        laozhangApiKey: cur.laozhangApiKey.trim() || fromLaozhang,
+        kieApiKey: cur.kieApiKey.trim() || fromKie,
+      });
     });
   });
 }

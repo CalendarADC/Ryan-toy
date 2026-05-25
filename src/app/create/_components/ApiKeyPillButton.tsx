@@ -3,45 +3,68 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useJewelryGeneratorStore } from "@/store/jewelryGeneratorStore";
 import {
+  getClientImageApiVendorSnapshot,
+  getClientKieApiKeySnapshot,
   getClientLaozhangApiKeySnapshot,
-  hydrateLaozhangApiKeyFromIndexedDb,
+  hydrateImageApiKeysFromIndexedDb,
+  readClientImageApiVendor,
+  readClientKieApiKey,
   readClientLaozhangApiKey,
   subscribeClientLaozhangApiKey,
+  writeClientImageApiVendor,
+  writeClientKieApiKey,
   writeClientLaozhangApiKey,
 } from "@/lib/laozhangKeyClientStorage";
 import { emitToast } from "@/lib/ui/toast";
 
 export default function ApiKeyPillButton() {
+  const imageApiVendor = useJewelryGeneratorStore((s) => s.imageApiVendor);
+  const setImageApiVendor = useJewelryGeneratorStore((s) => s.setImageApiVendor);
   const laozhangApiKey = useJewelryGeneratorStore((s) => s.laozhangApiKey);
+  const kieApiKey = useJewelryGeneratorStore((s) => s.kieApiKey);
   const setLaozhangApiKey = useJewelryGeneratorStore((s) => s.setLaozhangApiKey);
+  const setKieApiKey = useJewelryGeneratorStore((s) => s.setKieApiKey);
   const [open, setOpen] = useState(false);
   const [draftKey, setDraftKey] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const persistedProbe = useSyncExternalStore(
+  const persistedLaozhang = useSyncExternalStore(
     subscribeClientLaozhangApiKey,
     getClientLaozhangApiKeySnapshot,
     () => ""
   );
+  const persistedKie = useSyncExternalStore(
+    subscribeClientLaozhangApiKey,
+    getClientKieApiKeySnapshot,
+    () => ""
+  );
+  const persistedVendor = useSyncExternalStore(
+    subscribeClientLaozhangApiKey,
+    getClientImageApiVendorSnapshot,
+    () => "laozhang"
+  );
+  const activeVendor = imageApiVendor || persistedVendor || readClientImageApiVendor();
+  const activeKeyInStore = activeVendor === "kie" ? kieApiKey : laozhangApiKey;
+  const activeKeyInStorage = activeVendor === "kie" ? persistedKie : persistedLaozhang;
   const hasApiKey =
-    laozhangApiKey.trim().length > 0 || persistedProbe.trim().length > 0;
-  const hoverText = hasApiKey ? "已经激活，点击可更换api" : "请输入可用的api";
+    activeKeyInStore.trim().length > 0 || activeKeyInStorage.trim().length > 0;
+  const vendorLabel = activeVendor === "kie" ? "Kie" : "LaoZhang";
+  const hoverText = hasApiKey ? `${vendorLabel} 已激活，点击可更换` : "请选择供应商并输入 API Key";
 
   useEffect(() => {
-    void hydrateLaozhangApiKeyFromIndexedDb().then(() => {
-      const k = readClientLaozhangApiKey().trim();
-      if (!k) return;
-      if (!useJewelryGeneratorStore.getState().laozhangApiKey.trim()) {
-        useJewelryGeneratorStore.setState({ laozhangApiKey: k });
-      }
+    void hydrateImageApiKeysFromIndexedDb().then(() => {
+      const fromVendor = readClientImageApiVendor();
+      const fromLaozhang = readClientLaozhangApiKey().trim();
+      const fromKie = readClientKieApiKey().trim();
+      const s = useJewelryGeneratorStore.getState();
+      useJewelryGeneratorStore.setState({
+        imageApiVendor: s.imageApiVendor || fromVendor,
+        laozhangApiKey: s.laozhangApiKey.trim() || fromLaozhang,
+        kieApiKey: s.kieApiKey.trim() || fromKie,
+      });
     });
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    setDraftKey(laozhangApiKey.trim() || readClientLaozhangApiKey());
-  }, [laozhangApiKey, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,14 +90,19 @@ export default function ApiKeyPillButton() {
     if (!next) {
       emitToast({
         type: "info",
-        message: "请先输入 LaoZhang API Key 再保存。",
+        message: `请先输入 ${activeVendor === "kie" ? "Kie" : "LaoZhang"} API Key 再保存。`,
         durationMs: 3800,
       });
       return;
     }
-    writeClientLaozhangApiKey(next);
+    if (activeVendor === "kie") {
+      writeClientKieApiKey(next);
+      setKieApiKey(next);
+    } else {
+      writeClientLaozhangApiKey(next);
+      setLaozhangApiKey(next);
+    }
     setDraftKey(next);
-    setLaozhangApiKey(next);
     setOpen(false);
     emitToast({ type: "success", message: "密钥已保存。", durationMs: 2200 });
   };
@@ -99,7 +127,16 @@ export default function ApiKeyPillButton() {
           title={hoverText}
           aria-expanded={open}
           aria-haspopup="dialog"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            if (!open) {
+              setDraftKey(
+                activeVendor === "kie"
+                  ? kieApiKey.trim() || readClientKieApiKey()
+                  : laozhangApiKey.trim() || readClientLaozhangApiKey()
+              );
+            }
+            setOpen((v) => !v);
+          }}
           className={`inline-flex items-center rounded-full px-3.5 py-2 text-sm font-semibold transition sm:px-4 ${innerClass} ${
             hasApiKey ? "" : "gap-2"
           }`}
@@ -107,13 +144,45 @@ export default function ApiKeyPillButton() {
           {!hasApiKey ? (
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600/70" aria-hidden />
           ) : null}
-          密钥
+          密钥({vendorLabel})
         </button>
       </div>
       {open ? (
         <div className="absolute left-0 top-full z-[60] mt-2 w-[min(85vw,320px)] rounded-2xl border border-[rgba(94,111,130,0.2)] bg-[var(--create-surface-paper)] p-3 shadow-xl">
+          <div className="mb-2 flex gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                activeVendor === "laozhang"
+                  ? "bg-[#2c2824] text-white"
+                  : "bg-white text-zinc-700 ring-1 ring-zinc-200"
+              }`}
+              onClick={() => {
+                setImageApiVendor("laozhang");
+                writeClientImageApiVendor("laozhang");
+                setDraftKey(laozhangApiKey.trim() || readClientLaozhangApiKey());
+              }}
+            >
+              LaoZhang
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                activeVendor === "kie"
+                  ? "bg-[#2c2824] text-white"
+                  : "bg-white text-zinc-700 ring-1 ring-zinc-200"
+              }`}
+              onClick={() => {
+                setImageApiVendor("kie");
+                writeClientImageApiVendor("kie");
+                setDraftKey(kieApiKey.trim() || readClientKieApiKey());
+              }}
+            >
+              Kie
+            </button>
+          </div>
           <label htmlFor="header-api-key-input" className="mb-2 block text-xs font-medium text-zinc-700">
-            输入 API Key
+            输入 {activeVendor === "kie" ? "Kie" : "LaoZhang"} API Key
           </label>
           <input
             ref={inputRef}
@@ -129,7 +198,7 @@ export default function ApiKeyPillButton() {
                 onSave();
               }
             }}
-            placeholder="sk-..."
+            placeholder={activeVendor === "kie" ? "kie-..." : "sk-..."}
             className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-blue-300 placeholder:text-zinc-400 focus:border-blue-300 focus:ring-2"
           />
           <div className="mt-3 flex items-center justify-end gap-2">
@@ -137,8 +206,13 @@ export default function ApiKeyPillButton() {
               type="button"
               onClick={() => {
                 setDraftKey("");
-                writeClientLaozhangApiKey("");
-                setLaozhangApiKey("");
+                if (activeVendor === "kie") {
+                  writeClientKieApiKey("");
+                  setKieApiKey("");
+                } else {
+                  writeClientLaozhangApiKey("");
+                  setLaozhangApiKey("");
+                }
                 setOpen(false);
               }}
               className="rounded-full px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100"

@@ -62,10 +62,12 @@ export default function Step2Gallery() {
     error,
     step2ImageResolution,
     setStep2ImageResolution,
+    imageApiVendor,
     step2BananaImageModel,
     setStep2BananaImageModel,
   } =
     useJewelryGeneratorStore();
+  const kieMode = imageApiVendor === "kie";
 
   const [previewItems, setPreviewItems] = useState<
     Array<{ url: string; alt: string }>
@@ -643,9 +645,11 @@ export default function Step2Gallery() {
                 aria-haspopup="listbox"
                 aria-expanded={step2ModelMenuOpen}
                 aria-pressed={step2BananaImageModel === "banana-pro"}
-                aria-label="Step2 生图模型：Banana pro、Banana 2 或 gpt-image-2（老张）"
+                aria-label={kieMode ? "Step2 生图模型：Kie 仅支持 Banana pro" : "Step2 生图模型：Banana pro、Banana 2 或 gpt-image-2（老张）"}
                 title={
-                  step2BananaImageModel === "banana-2"
+                  kieMode
+                    ? "当前 Kie：仅支持 Banana pro"
+                    : step2BananaImageModel === "banana-2"
                     ? "当前 Banana 2，点击更换"
                     : step2BananaImageModel === "gpt-image-2"
                       ? "当前 gpt-image-2，点击更换"
@@ -685,13 +689,17 @@ export default function Step2Gallery() {
                   <button
                     type="button"
                     role="option"
+                    disabled={kieMode}
                     aria-selected={step2BananaImageModel === "banana-2"}
                     className={`block w-full whitespace-nowrap px-3 py-2 text-left text-sm transition ${
                       step2BananaImageModel === "banana-2"
                         ? "bg-amber-50 font-semibold text-amber-900"
-                        : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
+                        : kieMode
+                          ? "cursor-not-allowed text-zinc-400"
+                          : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
                     }`}
                     onClick={() => {
+                      if (kieMode) return;
                       setStep2BananaImageModel("banana-2");
                       setStep2ModelMenuOpen(false);
                     }}
@@ -701,13 +709,17 @@ export default function Step2Gallery() {
                   <button
                     type="button"
                     role="option"
+                    disabled={kieMode}
                     aria-selected={step2BananaImageModel === "gpt-image-2"}
                     className={`block w-full whitespace-nowrap px-3 py-2 text-left text-sm transition ${
                       step2BananaImageModel === "gpt-image-2"
                         ? "bg-amber-50 font-semibold text-amber-900"
-                        : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
+                        : kieMode
+                          ? "cursor-not-allowed text-zinc-400"
+                          : "text-[#363028] hover:bg-[color-mix(in_srgb,var(--create-surface-tray)_12%,var(--create-surface-paper))]"
                     }`}
                     onClick={() => {
+                      if (kieMode) return;
                       setStep2BananaImageModel("gpt-image-2");
                       setStep2ModelMenuOpen(false);
                     }}

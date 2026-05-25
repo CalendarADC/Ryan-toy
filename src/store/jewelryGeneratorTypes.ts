@@ -1,6 +1,7 @@
 import type { Step2WearGender } from "@/lib/step2/step2WearGender";
 
 export type AIProvider = "nano-banana-pro" | "chatgpt-1.5";
+export type ImageApiVendor = "laozhang" | "kie";
 export type Step1ExpansionStrength = "standard" | "strong";
 /** Step1/2：老张 Banana pro（Pro）/ Banana 2（Flash）/ GPT Image 2 */
 export type StepBananaImageModel = "banana-pro" | "banana-2" | "gpt-image-2";
@@ -104,7 +105,9 @@ export type JewelryGeneratorStore = {
   step1ExpansionStrength: Step1ExpansionStrength;
   step1ImageResolution: "1K" | "2K" | "4K";
   step2ImageResolution: "1K" | "2K" | "4K";
+  imageApiVendor: ImageApiVendor;
   laozhangApiKey: string;
+  kieApiKey: string;
   /** Step1 可选参考图（data URL），最多 3 张；不写入 persist */
   step1ReferenceImageDataUrls: string[];
 
@@ -142,7 +145,9 @@ export type JewelryGeneratorStore = {
   setStep1ExpansionStrength: (v: Step1ExpansionStrength) => void;
   setStep1ImageResolution: (v: "1K" | "2K" | "4K") => void;
   setStep2ImageResolution: (v: "1K" | "2K" | "4K") => void;
+  setImageApiVendor: (v: ImageApiVendor) => void;
   setLaozhangApiKey: (v: string) => void;
+  setKieApiKey: (v: string) => void;
   addStep1ReferenceImage: (dataUrl: string) => boolean;
   removeStep1ReferenceImageAt: (index: number) => void;
   clearStep1ReferenceImages: () => void;

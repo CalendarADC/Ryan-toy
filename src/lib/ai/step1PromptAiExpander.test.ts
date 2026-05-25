@@ -25,7 +25,10 @@ import {
   userPromptAllowsEnamelOrLiuli,
   userPromptSpecifiesNonZirconGemstone,
   parseStep1ExpandDepth,
+  resolveCompanionElementPolicy,
   step1ExpandDepthUsesThinking,
+  userPromptForcesSingleElementOnly,
+  userPromptIndicatesMultiDesignElements,
   isKimiStep1ExpandModel,
 } from "./step1PromptAiExpander";
 
@@ -197,6 +200,27 @@ describe("Step1ExpandDepth", () => {
   it("isKimiStep1ExpandModel detects kimi models", () => {
     expect(isKimiStep1ExpandModel("kimi-k2.6")).toBe(true);
     expect(isKimiStep1ExpandModel("doubao-1-5-vision-pro")).toBe(false);
+  });
+});
+
+describe("companion element auto policy", () => {
+  it("forbids companion when user emphasizes only one element", () => {
+    const p = "做一个925银戒指，仅仅以天使翅膀为设计元素，不要其他元素";
+    expect(userPromptForcesSingleElementOnly(p)).toBe(true);
+    expect(resolveCompanionElementPolicy(p)).toBe("forbid_add");
+  });
+
+  it("skips auto-add when user already provides multi-element brief", () => {
+    const p = "做一个925银戒指，以天使翅膀和荆棘作为设计元素，哥特风";
+    expect(userPromptIndicatesMultiDesignElements(p)).toBe(true);
+    expect(resolveCompanionElementPolicy(p)).toBe("no_auto_add");
+  });
+
+  it("auto-adds one companion for single-element brief", () => {
+    const p = "做一个925银戒指，以天使翅膀为主题，哥特风格";
+    expect(userPromptForcesSingleElementOnly(p)).toBe(false);
+    expect(userPromptIndicatesMultiDesignElements(p)).toBe(false);
+    expect(resolveCompanionElementPolicy(p)).toBe("auto_add_one");
   });
 });
 

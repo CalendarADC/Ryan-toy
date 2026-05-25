@@ -4,6 +4,7 @@ import type {
   AIProvider,
   Copywriting,
   GalleryImage,
+  ImageApiVendor,
   MainImage,
   Step1ExpansionStrength,
   Step1ImageModel,
@@ -45,7 +46,9 @@ export type TaskWorkspaceMeta = {
   step1ExpansionStrength: Step1ExpansionStrength;
   step1ImageResolution: "1K" | "2K" | "4K";
   step2ImageResolution: "1K" | "2K" | "4K";
+  imageApiVendor?: ImageApiVendor;
   laozhangApiKey?: string;
+  kieApiKey?: string;
   selectedMainImageId: string | null;
   selectedMainImageUrl: string | null;
   selectedMainImageIds: string[];
@@ -63,7 +66,9 @@ export const defaultTaskWorkspaceMeta = (): TaskWorkspaceMeta => ({
   step1ExpansionStrength: "standard",
   step1ImageResolution: "1K",
   step2ImageResolution: "1K",
+  imageApiVendor: "laozhang",
   laozhangApiKey: "",
+  kieApiKey: "",
   selectedMainImageId: null,
   selectedMainImageUrl: null,
   selectedMainImageIds: [],
