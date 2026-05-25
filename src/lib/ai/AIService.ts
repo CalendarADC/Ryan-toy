@@ -912,9 +912,19 @@ type KieCreateTaskResponse = {
 
 type KieRecordInfoResponse = {
   code?: number;
+  message?: string;
   msg?: string;
   data?: {
     taskStatus?: "pending" | "processing" | "success" | "failed" | string;
+    state?: "waiting" | "queuing" | "generating" | "success" | "fail" | string;
+    status?: string;
+    successFlag?: number;
+    resultJson?: string;
+    resultUrls?: string[];
+    result_urls?: string[];
+    images?: string[];
+    failMsg?: string;
+    failCode?: string;
     response?: { resultUrls?: string[]; resultJson?: string };
   };
 };
@@ -984,10 +994,17 @@ async function createKieTask(args: {
 }
 
 function extractKieResultUrls(record: KieRecordInfoResponse): string[] {
-  const urls = record.data?.response?.resultUrls;
-  if (Array.isArray(urls) && urls.length) return urls.filter((x): x is string => typeof x === "string");
-  const raw = record.data?.response?.resultJson;
-  if (!raw?.trim()) return [];
+  const data = record.data;
+  const directArrays = [data?.response?.resultUrls, data?.resultUrls, data?.result_urls, data?.images];
+  for (const arr of directArrays) {
+    if (Array.isArray(arr) && arr.length) {
+      const extracted = arr.filter((x): x is string => typeof x === "string");
+      if (extracted.length) return extracted;
+    }
+  }
+  const rawCandidates = [data?.response?.resultJson, data?.resultJson];
+  const raw = rawCandidates.find((x) => typeof x === "string" && x.trim()) || "";
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as {
       resultUrls?: unknown;
@@ -1016,6 +1033,14 @@ function isKieFailedStatus(status: string): boolean {
   return ["failed", "fail", "error", "cancelled", "canceled"].includes(status);
 }
 
+function resolveKieTaskStatus(data: KieRecordInfoResponse["data"]): string {
+  const status = (data?.taskStatus || data?.state || data?.status || "").toLowerCase().trim();
+  if (status) return status;
+  if (data?.successFlag === 1) return "success";
+  if (data?.successFlag === 0) return "failed";
+  return "";
+}
+
 async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<string> {
   const apiKey = requireKieApiKey(kieApiKey);
   const startedAt = Date.now();
@@ -1036,10 +1061,10 @@ async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<st
     }
     const data = (await res.json()) as KieRecordInfoResponse;
     if (data.code && data.code !== 200) {
-      throw new Error(`Kie recordInfo failed: ${data.msg || `code=${data.code}`}`);
+      throw new Error(`Kie recordInfo failed: ${data.msg || data.message || `code=${data.code}`}`);
     }
-    lastMsg = data.msg || "";
-    const status = (data.data?.taskStatus || "").toLowerCase();
+    lastMsg = data.msg || data.message || "";
+    const status = resolveKieTaskStatus(data.data);
     if (status) lastStatus = status;
     const resultUrls = extractKieResultUrls(data);
     const firstUsable = resultUrls.find((x) => /^https?:\/\//i.test(x));
@@ -1049,7 +1074,7 @@ async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<st
       throw new Error("Kie task succeeded but returned no usable image URL.");
     }
     if (isKieFailedStatus(status)) {
-      throw new Error(`Kie task failed: ${data.msg || "upstream status=failed"}`);
+      throw new Error(`Kie task failed: ${data.data?.failMsg || data.msg || data.message || "upstream status=failed"}`);
     }
     await sleep(KIE_POLL_INTERVAL_MS);
   }
