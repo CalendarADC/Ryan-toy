@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
         outputFileTracingIncludes: {
           "/*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
         },
+        /** Electron asar 内不可写；禁用优化器避免 ENOTDIR（Failed to write image to cache）。 */
+        images: { unoptimized: true },
       }
     : {}),
 };

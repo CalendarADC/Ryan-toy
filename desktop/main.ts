@@ -19,6 +19,43 @@ let nextProcess: ChildProcess | null = null;
 let startingWindow: BrowserWindow | null = null;
 let suppressNextExitDialog = false;
 let nextChildExitedAbnormally = false;
+let desktopAppLabel = "GemMuse";
+
+function getDesktopAppLabel(): string {
+  const paths = [join(app.getAppPath(), "package.json")];
+  if (app.isPackaged) {
+    paths.push(join(process.resourcesPath, "app", "package.json"));
+  }
+  for (const p of paths) {
+    try {
+      if (!existsSync(p)) continue;
+      const raw = JSON.parse(readFileSync(p, "utf8")) as { version?: unknown };
+      const v = typeof raw.version === "string" ? raw.version.trim() : "";
+      if (v) return `GemMuse ${v}`;
+    } catch {
+      /* try next */
+    }
+  }
+  return "GemMuse";
+}
+
+function refreshDesktopAppLabel(): void {
+  desktopAppLabel = getDesktopAppLabel();
+}
+
+/** 打包后 standalone 需可写 .next/cache，避免 Next 图片优化器 ENOTDIR。 */
+function ensureStandaloneNextCacheDirs(): void {
+  if (!app.isPackaged) return;
+  const standaloneDir = join(app.getAppPath(), ".next", "standalone");
+  const cacheRoot = join(standaloneDir, ".next", "cache");
+  for (const sub of ["images", "fetch-cache"]) {
+    try {
+      mkdirSync(join(cacheRoot, sub), { recursive: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 /** 安装包内主进程往往没有 NODE_ENV=production，不能用 NODE_ENV 判断是否内嵌 Next。 */
 function shouldRunEmbeddedNextFromMain(): boolean {
@@ -213,7 +250,7 @@ function showPackagedStartingWindow() {
     minimizable: false,
     maximizable: false,
     autoHideMenuBar: true,
-    title: "GemMuse 2.2",
+    title: desktopAppLabel,
     webPreferences: { sandbox: true },
   });
   const html =
@@ -307,7 +344,7 @@ function createWindow() {
   const preloadPath = join(__dirname, "preload.js");
   const deviceInfo = buildDeviceInfo();
   const win = new BrowserWindow({
-    title: "GemMuse 2.2",
+    title: desktopAppLabel,
     width: 1480,
     height: 940,
     minWidth: 1180,
@@ -341,7 +378,7 @@ function createWindow() {
     if (url.startsWith(NEXT_URL)) {
       void dialog.showMessageBox(win, {
         type: "error",
-        title: "GemMuse 2.2",
+        title: desktopAppLabel,
         message: "页面加载失败",
         detail: `${desc}（错误码 ${code}）\n地址：${url}\n请确认本机未占用端口 ${DEFAULT_PORT}，且 .env 中数据库等配置正确。`,
       });
@@ -352,15 +389,17 @@ function createWindow() {
 }
 
 void app.whenReady().then(async () => {
+  refreshDesktopAppLabel();
   registerDesktopIpcHandlers();
   loadPackagedDesktopEnv();
   applyDesktopRuntimeDefaults();
   ensureGemmuseLocalMediaDir();
+  ensureStandaloneNextCacheDirs();
   showPackagedStartingWindow();
   startBundledNextServer();
   if (nextProcess) {
     nextProcess.once("error", (err) => {
-      void dialog.showErrorBox("GemMuse 2.2", `无法启动内置服务：${String(err?.message ?? err)}`);
+      void dialog.showErrorBox(desktopAppLabel, `无法启动内置服务：${String(err?.message ?? err)}`);
     });
     nextProcess.once("exit", (code, signal) => {
       if (suppressNextExitDialog) return;
@@ -369,7 +408,7 @@ void app.whenReady().then(async () => {
       nextChildExitedAbnormally = true;
       const tail = readNextServerLogTail();
       void dialog.showErrorBox(
-        "GemMuse 2.2",
+        desktopAppLabel,
         `内置服务已退出（代码 ${String(code)}${signal ? `，信号 ${signal}` : ""}）。\n` +
           `配置：exe 同目录 .env / .env.example，或 ${join(app.getPath("userData"), ".env")}\n` +
           `日志：${nextServerLogPath()}\n\n` +
@@ -391,7 +430,7 @@ void app.whenReady().then(async () => {
     if (!ok && !nextChildExitedAbnormally) {
       const tail = readNextServerLogTail();
       void dialog.showErrorBox(
-        "GemMuse 2.2",
+        desktopAppLabel,
         `本地服务在约 2 分钟内未就绪：${NEXT_URL}\n` +
           `请检查端口 ${DEFAULT_PORT}、数据库与 .env。完整日志见：${nextServerLogPath()}\n\n` +
           (tail ? tail : "")
