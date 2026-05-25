@@ -1,5 +1,4 @@
 import { isKeyOnlyAuthEnabled } from "@/lib/authMode";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 type ObjectStorageConfig = {
   endpoint: string;
@@ -20,6 +19,22 @@ type ObjectStorageGateOptions = {
    * 对于 Kie 临时公网 URL 场景可显式放开。
    */
   allowInDesktopLocalImageStorage?: boolean;
+};
+
+type S3Sdk = {
+  S3Client: new (args: {
+    region: string;
+    endpoint: string;
+    forcePathStyle: boolean;
+    credentials: { accessKeyId: string; secretAccessKey: string };
+  }) => { send: (cmd: unknown) => Promise<unknown> };
+  PutObjectCommand: new (args: {
+    Bucket: string;
+    Key: string;
+    Body: Buffer;
+    ContentType: string;
+    CacheControl: string;
+  }) => unknown;
 };
 
 function envEnabled(v: string | undefined): boolean {
@@ -65,6 +80,15 @@ export function explainObjectStorageDisabled(opts?: ObjectStorageGateOptions): s
   return "未知原因（对象存储配置未生效）";
 }
 
+function loadS3Sdk(): S3Sdk | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("@aws-sdk/client-s3") as S3Sdk;
+  } catch {
+    return null;
+  }
+}
+
 export async function uploadPngBase64ToObjectStorage(args: {
   base64: string;
   key: string;
@@ -88,6 +112,11 @@ export async function uploadBinaryToObjectStorage(args: {
 }): Promise<{ url: string; objectKey: string } | null> {
   const cfg = getObjectStorageConfig(args.gateOptions);
   if (!cfg) return null;
+  const sdk = loadS3Sdk();
+  if (!sdk) {
+    throw new Error("对象存储 SDK 未找到（@aws-sdk/client-s3）。请使用包含完整依赖的桌面安装包。");
+  }
+  const { S3Client, PutObjectCommand } = sdk;
 
   const body = Buffer.isBuffer(args.bytes) ? args.bytes : Buffer.from(args.bytes);
   const client = new S3Client({

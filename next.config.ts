@@ -11,7 +11,13 @@ const nextConfig: NextConfig = {
           GEMMUSE_DESKTOP_STANDALONE: "1",
         },
         outputFileTracingIncludes: {
-          "/*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
+          "/*": [
+            "./node_modules/sharp/**/*",
+            "./node_modules/@img/**/*",
+            "./node_modules/@aws-sdk/**/*",
+            "./node_modules/@smithy/**/*",
+            "./node_modules/@aws-crypto/**/*",
+          ],
         },
         /**
          * Electron asar 内不可写：禁用优化与磁盘图片缓存，避免 ENOTDIR。
