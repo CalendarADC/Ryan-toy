@@ -1,3 +1,7 @@
+import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { isKeyOnlyAuthEnabled } from "@/lib/authMode";
 
 type ObjectStorageConfig = {
@@ -81,6 +85,32 @@ export function explainObjectStorageDisabled(opts?: ObjectStorageGateOptions): s
 }
 
 function loadS3Sdk(): S3Sdk | null {
+  const searchRoots: string[] = [];
+  const standaloneRoot = process.env.GEMMUSE_STANDALONE_ROOT?.trim();
+  if (standaloneRoot) {
+    searchRoots.push(join(standaloneRoot, "node_modules"));
+    searchRoots.push(standaloneRoot);
+  }
+  const nodePath = process.env.NODE_PATH?.trim();
+  if (nodePath) {
+    for (const part of nodePath.split(process.platform === "win32" ? ";" : ":")) {
+      const p = part.trim();
+      if (p) searchRoots.push(p);
+    }
+  }
+  searchRoots.push(join(process.cwd(), "node_modules"));
+
+  for (const root of searchRoots) {
+    const pkgJson = join(root, "@aws-sdk", "client-s3", "package.json");
+    if (!existsSync(pkgJson)) continue;
+    try {
+      const req = createRequire(pkgJson);
+      return req(".") as S3Sdk;
+    } catch {
+      /* try next root */
+    }
+  }
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("@aws-sdk/client-s3") as S3Sdk;
@@ -114,7 +144,9 @@ export async function uploadBinaryToObjectStorage(args: {
   if (!cfg) return null;
   const sdk = loadS3Sdk();
   if (!sdk) {
-    throw new Error("对象存储 SDK 未找到（@aws-sdk/client-s3）。请使用包含完整依赖的桌面安装包。");
+    throw new Error(
+      "对象存储 SDK 未找到（@aws-sdk/client-s3）。请安装最新桌面版；若已是最新版，请完全退出后重启 GemMuse。"
+    );
   }
   const { S3Client, PutObjectCommand } = sdk;
 

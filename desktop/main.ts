@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } fr
 import { config as loadDotenvFile } from "dotenv";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { dirname, join } from "node:path";
 import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import net from "node:net";
@@ -256,6 +257,26 @@ function envForBundledNodeChild(): NodeJS.ProcessEnv {
   };
 }
 
+/** 内置 Next 子进程的 cwd 在 exe 目录，需显式告知 standalone 与 node_modules 搜索路径。 */
+function bundledNextChildEnv(
+  standaloneDir: string,
+  extra?: Record<string, string | undefined>
+): NodeJS.ProcessEnv {
+  const base = envForBundledNodeChild();
+  const appRoot = app.getAppPath();
+  const nodePaths = [
+    join(standaloneDir, "node_modules"),
+    join(appRoot, "node_modules"),
+    base.NODE_PATH,
+  ].filter((v): v is string => typeof v === "string" && !!v.trim());
+  return {
+    ...base,
+    ...extra,
+    GEMMUSE_STANDALONE_ROOT: standaloneDir,
+    NODE_PATH: nodePaths.join(path.delimiter),
+  };
+}
+
 /**
  * 打包后 `app.getAppPath()` 含 `app.asar`；`existsSync`/脚本路径可用该逻辑路径。
  * 但 Windows 上子进程 `cwd` 不能是 `…\app.asar\…` 这种「归档内伪目录」，否则 CreateProcess 失败
@@ -351,11 +372,10 @@ function startBundledNextServer() {
   if (existsSync(standaloneServer)) {
     nextProcess = spawnBundledNodeChild([standaloneServer], {
       cwd: spawnCwdForBundledNext(standaloneDir),
-      env: {
-        ...envForBundledNodeChild(),
+      env: bundledNextChildEnv(standaloneDir, {
         PORT: String(desktopListenPort),
         HOSTNAME: "127.0.0.1",
-      },
+      }),
       windowsHide: true,
     });
     return;
