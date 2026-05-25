@@ -48,7 +48,7 @@ import {
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
 import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
-import { uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
+import { explainObjectStorageDisabled, uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { buildCappyCalmCharacterLockBlock } from "@/lib/ip/cappyCalm";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
@@ -135,7 +135,11 @@ async function ensureKieReferenceUrls(args: {
       },
     });
     if (!uploadedItem?.url) {
-      throw new Error("Kie 参考图需要临时公网 URL，但当前环境未启用对象存储上传。");
+      const reason = explainObjectStorageDisabled({
+        allowInKeyOnlyAuth: true,
+        allowInDesktopLocalImageStorage: true,
+      });
+      throw new Error(`Kie 参考图需要临时公网 URL，但当前环境未启用对象存储上传。${reason}`);
     }
     uploaded.push(uploadedItem.url);
   }

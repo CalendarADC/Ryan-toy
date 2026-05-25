@@ -1,4 +1,5 @@
 import { isKeyOnlyAuthEnabled } from "@/lib/authMode";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 type ObjectStorageConfig = {
   endpoint: string;
@@ -47,6 +48,23 @@ function getObjectStorageConfig(opts?: ObjectStorageGateOptions): ObjectStorageC
   return { endpoint, bucket, accessKeyId, secretAccessKey, publicBaseUrl };
 }
 
+export function explainObjectStorageDisabled(opts?: ObjectStorageGateOptions): string {
+  if (isKeyOnlyAuthEnabled() && !opts?.allowInKeyOnlyAuth) {
+    return "GEMMUSE_KEY_ONLY_AUTH=1 且当前场景未放行对象存储";
+  }
+  if (envEnabled(process.env.DESKTOP_LOCAL_IMAGE_STORAGE) && !opts?.allowInDesktopLocalImageStorage) {
+    return "DESKTOP_LOCAL_IMAGE_STORAGE=1 且当前场景未放行对象存储";
+  }
+  const missing: string[] = [];
+  if (!process.env.R2_ENDPOINT?.trim()) missing.push("R2_ENDPOINT");
+  if (!process.env.R2_BUCKET?.trim()) missing.push("R2_BUCKET");
+  if (!process.env.R2_ACCESS_KEY_ID?.trim()) missing.push("R2_ACCESS_KEY_ID");
+  if (!process.env.R2_SECRET_ACCESS_KEY?.trim()) missing.push("R2_SECRET_ACCESS_KEY");
+  if (!process.env.R2_PUBLIC_BASE_URL?.trim()) missing.push("R2_PUBLIC_BASE_URL");
+  if (missing.length) return `缺少环境变量：${missing.join(", ")}`;
+  return "未知原因（对象存储配置未生效）";
+}
+
 export async function uploadPngBase64ToObjectStorage(args: {
   base64: string;
   key: string;
@@ -70,10 +88,6 @@ export async function uploadBinaryToObjectStorage(args: {
 }): Promise<{ url: string; objectKey: string } | null> {
   const cfg = getObjectStorageConfig(args.gateOptions);
   if (!cfg) return null;
-
-  const sdk = await import("@aws-sdk/client-s3").catch(() => null);
-  if (!sdk) return null;
-  const { PutObjectCommand, S3Client } = sdk;
 
   const body = Buffer.isBuffer(args.bytes) ? args.bytes : Buffer.from(args.bytes);
   const client = new S3Client({
