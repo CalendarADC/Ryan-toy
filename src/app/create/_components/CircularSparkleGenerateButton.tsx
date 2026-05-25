@@ -1,7 +1,5 @@
 "use client";
 
-import Image from "next/image";
-
 export type CircularSparkleGenerateButtonProps = {
   /** Prerequisites met (excluding loading); amber ring shows when true or while loading */
   canStart: boolean;
@@ -43,7 +41,7 @@ export default function CircularSparkleGenerateButton({
       {loading ? (
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" />
       ) : (
-        <Image
+        <img
           src="/icons/step1-sparkles.png"
           alt=""
           width={18}

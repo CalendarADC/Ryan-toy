@@ -3,7 +3,8 @@ import { config as loadDotenvFile } from "dotenv";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
+import net from "node:net";
 import os from "node:os";
 
 /**
@@ -43,18 +44,46 @@ function refreshDesktopAppLabel(): void {
   desktopAppLabel = getDesktopAppLabel();
 }
 
-/** 打包后 standalone 需可写 .next/cache，避免 Next 图片优化器 ENOTDIR。 */
-function ensureStandaloneNextCacheDirs(): void {
-  if (!app.isPackaged) return;
-  const standaloneDir = join(app.getAppPath(), ".next", "standalone");
-  const cacheRoot = join(standaloneDir, ".next", "cache");
-  for (const sub of ["images", "fetch-cache"]) {
-    try {
-      mkdirSync(join(cacheRoot, sub), { recursive: true });
-    } catch {
-      /* ignore */
-    }
+function isDesktopPortListening(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: "127.0.0.1" });
+    const finish = (open: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(800);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+/** 上次崩溃后内置 Next 子进程可能仍占用 4310，导致 EADDRINUSE。 */
+async function releaseStaleDesktopPort(port: number): Promise<void> {
+  if (!(await isDesktopPortListening(port))) return;
+  if (process.platform === "win32") {
+    spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue }`,
+      ],
+      { windowsHide: true },
+    );
+    await new Promise((r) => setTimeout(r, 400));
   }
+}
+
+function desktopNextExitHint(logTail: string): string {
+  if (/EADDRINUSE/i.test(logTail)) {
+    return `\n\n端口 ${DEFAULT_PORT} 已被占用（常见原因：上次 GemMuse 未正常退出）。\n请在任务管理器结束「GemMuseDesktop」相关进程后重试。`;
+  }
+  if (/ENOTDIR/i.test(logTail) && /image to cache/i.test(logTail)) {
+    return "\n\n内置 Next 无法写入 asar 内图片缓存。请安装最新桌面版（已禁用图片磁盘缓存）。";
+  }
+  return "";
 }
 
 /** 安装包内主进程往往没有 NODE_ENV=production，不能用 NODE_ENV 判断是否内嵌 Next。 */
@@ -394,7 +423,9 @@ void app.whenReady().then(async () => {
   loadPackagedDesktopEnv();
   applyDesktopRuntimeDefaults();
   ensureGemmuseLocalMediaDir();
-  ensureStandaloneNextCacheDirs();
+  if (shouldRunEmbeddedNextFromMain()) {
+    await releaseStaleDesktopPort(DEFAULT_PORT);
+  }
   showPackagedStartingWindow();
   startBundledNextServer();
   if (nextProcess) {
@@ -407,11 +438,12 @@ void app.whenReady().then(async () => {
       if (code === 0 || code === null) return;
       nextChildExitedAbnormally = true;
       const tail = readNextServerLogTail();
+      const hint = desktopNextExitHint(tail);
       void dialog.showErrorBox(
         desktopAppLabel,
         `内置服务已退出（代码 ${String(code)}${signal ? `，信号 ${signal}` : ""}）。\n` +
           `配置：exe 同目录 .env / .env.example，或 ${join(app.getPath("userData"), ".env")}\n` +
-          `日志：${nextServerLogPath()}\n\n` +
+          `日志：${nextServerLogPath()}${hint}\n\n` +
           (tail ? `--- 日志尾部 ---\n${tail}` : "(暂无日志；请确认已执行 npm run build 且 postbuild 已复制 sharp 原生文件后再打包。)")
       );
     });
@@ -429,10 +461,11 @@ void app.whenReady().then(async () => {
     closeStartingWindow();
     if (!ok && !nextChildExitedAbnormally) {
       const tail = readNextServerLogTail();
+      const hint = desktopNextExitHint(tail);
       void dialog.showErrorBox(
         desktopAppLabel,
         `本地服务在约 2 分钟内未就绪：${NEXT_URL}\n` +
-          `请检查端口 ${DEFAULT_PORT}、数据库与 .env。完整日志见：${nextServerLogPath()}\n\n` +
+          `请检查端口 ${DEFAULT_PORT}、数据库与 .env。完整日志见：${nextServerLogPath()}${hint}\n\n` +
           (tail ? tail : "")
       );
     }

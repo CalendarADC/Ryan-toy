@@ -10,8 +10,12 @@ const nextConfig: NextConfig = {
         outputFileTracingIncludes: {
           "/*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
         },
-        /** Electron asar 内不可写；禁用优化器避免 ENOTDIR（Failed to write image to cache）。 */
-        images: { unoptimized: true },
+        /**
+         * Electron asar 内不可写：禁用优化与磁盘图片缓存，避免 ENOTDIR。
+         * 仍有请求命中 /_next/image 时，ImageOptimizerCache 构造也会 mkdir(cacheDir)。
+         */
+        images: { unoptimized: true, maximumDiskCacheSize: 0 },
+        experimental: { isrFlushToDisk: false },
       }
     : {}),
 };

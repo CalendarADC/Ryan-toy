@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useJewelryGeneratorStore } from "@/store/jewelryGeneratorStore";
@@ -600,7 +599,7 @@ export default function TaskSidebar() {
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-normal text-[#2c2824] transition hover:bg-[#f0e6dc] disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => startRename(t.id, t.name)}
               >
-                <Image
+                <img
                   src="/icons/task-rename-quill.png"
                   alt=""
                   width={16}
