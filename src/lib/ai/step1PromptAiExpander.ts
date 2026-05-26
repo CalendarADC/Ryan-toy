@@ -67,6 +67,14 @@ export const STEP1_EXPAND_DEFAULT_MODEL = "ark-code-latest";
 export const STEP1_EXPAND_DEFAULT_VISION_MODEL = "doubao-1-5-vision-pro-32k-250115";
 
 export const STEP1_REFERENCE_VISION_MAX_IMAGES = 3;
+const STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT = 45_000;
+const STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX = 90_000;
+
+function resolveStep1ExpandHttpTimeoutMs(): number {
+  const raw = Number(process.env.STEP1_EXPAND_HTTP_TIMEOUT_MS ?? "");
+  if (!Number.isFinite(raw) || raw <= 0) return STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT;
+  return Math.max(8_000, Math.min(STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX, Math.floor(raw)));
+}
 
 export type Step1ExpandRuntimeConfig = {
   baseUrl: string;
@@ -691,6 +699,7 @@ export async function postStep1ExpandChat(args: {
 }): Promise<string> {
   const apiKey = args.apiKey;
   const label = args.errorLabel ?? "Step1 AI";
+  const timeoutMs = resolveStep1ExpandHttpTimeoutMs();
   const payload: Record<string, unknown> = {
     model: args.model,
     temperature: args.temperature ?? 0.85,
@@ -712,6 +721,8 @@ export async function postStep1ExpandChat(args: {
 
     let res: Response;
     let text: string;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       res = await fetch(args.url, {
         method: "POST",
@@ -720,14 +731,21 @@ export async function postStep1ExpandChat(args: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       text = await res.text().catch(() => "");
     } catch (netErr) {
+      const aborted = netErr instanceof Error && netErr.name === "AbortError";
       const msg = netErr instanceof Error ? netErr.message : String(netErr);
       if (attempt === maxAttempts - 1) {
-        throw new Error(`${label}失败（网络）：${msg}`);
+        const detail = aborted
+          ? `上游响应超时（>${timeoutMs}ms），请重试或改用快速扩写。`
+          : msg;
+        throw new Error(`${label}失败（网络）：${detail}`);
       }
       continue;
+    } finally {
+      clearTimeout(timer);
     }
 
     if (res.ok) {

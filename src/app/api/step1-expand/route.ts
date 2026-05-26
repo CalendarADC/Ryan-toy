@@ -10,6 +10,8 @@ import { inferJewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 import { requireApiActiveUser } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
+/** 网页端深度思考偶发长耗时，显式放宽函数时长，避免中间层提前断连。 */
+export const maxDuration = 300;
 
 type Body = {
   prompt: string;
