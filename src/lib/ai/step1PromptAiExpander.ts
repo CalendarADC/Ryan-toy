@@ -197,9 +197,15 @@ function extractAssistantText(
     return candidate;
   };
 
-  // Kimi 思考模式：推理在 reasoning_content，最终扩写正文应在 content，勿把推理链写入结果
+  // Kimi 思考模式：优先 content；若上游把最终正文放在 reasoning_content，做严格格式回退。
   if (options?.expandThinkingEnabled) {
     if (content) return pick(content);
+    if (kind && reasoning) {
+      const fromReasoning = extractStep1ExpandFinalPrompt(reasoning, kind);
+      if (/^设计一枚S925银(?:戒指|吊坠)/.test(fromReasoning)) {
+        return fromReasoning;
+      }
+    }
     return "";
   }
 
