@@ -101,7 +101,7 @@ const DEFAULT_COPY_TEMPLATE: CopyTemplate = {
   titleFormat:
     "输出英文 Etsy 标题，控制在 120-140 字符，覆盖品类、材质、主要元素、风格、受众词。",
   descriptionFormat:
-    "输出英文描述，分段清晰：卖点开场、工艺与材质、佩戴/送礼场景、护理建议，避免空话。",
+    "英文 Description：Product Description → Material → Care Instructions → Order & Shipping Note → Customization Service；全篇 emoji 不超过 3 个且勿作段落标题前缀；有宝石须写清锆石等种类与颜色，禁自然宝石表述。",
   tagsFormat:
     "输出 13 个英文标签数组，每个 <= 20 字符，避免重复，优先高意图电商搜索词。",
   createdAt: "",
@@ -120,8 +120,37 @@ function normalizeTemplate(input: CopyTemplate | null | undefined): CopyTemplate
   };
 }
 
+function isNecklaceProduct(prompt: string, gallery: GalleryImage[]): boolean {
+  const blob = [
+    prompt,
+    ...gallery.map((g) => g.debugPromptZh ?? ""),
+  ]
+    .join("\n")
+    .toLowerCase();
+  return /necklace|项链|choker|颈链/.test(blob);
+}
+
+function buildStep4DescriptionRulesBlock(isNecklace: boolean): string {
+  return [
+    "description 核心原则：多用短句，让用户带入使用场景，写清楚产品优势。",
+    "description emoji 规则（硬性）：禁止在每个段落标题或每条卖点前加 emoji（例如禁止「✨ Product Description」「💖 Care Instructions」）；全篇 description 内 emoji 总数不得超过 3 个，且仅用于点缀正文，不可充当列表符号。",
+    "description 宝石规则（硬性）：若产品可见镶嵌宝石，必须在正文中写清宝石颜色与种类（一般为 zircon / cubic zirconia，可用商品色名如 champagne zircon、deep sea blue zircon 等）；禁止出现 natural gemstone、天然宝石、天然石、真宝石、precious stone、ruby/sapphire/emerald 等暗示天然贵重石的表述，除非用户原文已明确要求。",
+    "description 必须按以下段落顺序组织（段落标题用纯英文，标题行本身不要 emoji）：",
+    "1) Product Description — 卖点与造型、佩戴/礼赠场景。",
+    "2) Material — 必须在 Care Instructions 之前单独成段；根据图片与提示词判断并明确写出材质（三选一或组合说明其一为主）：S925 sterling silver、18K Rose Gold Plated、Solid brass；并写清工艺/表面处理与产品特点（尺寸感、重量感、风格、适用人群等）。",
+    isNecklace
+      ? "   若判定为项链类产品：Material 段必须写明提供 40cm 与 60cm 两种链长选项（或 40 cm / 60 cm length options）。"
+      : "   若非项链：不要写链长选项。",
+    "3) Care Instructions — 护理与保养建议。",
+    "4) Order & Shipping Note — 手工定制周期、个体差异、图片仅参考、定制品非质量问题不退换等。",
+    "5) Customization Service — 可定制说明（若有）。",
+    "可参考 Order 表达：Each ring is handcrafted to order, so please allow 21–28 business days for production before shipping...（按品类改写 ring/necklace/pendant）。",
+  ].join("\n");
+}
+
 function extractPromptKeyInfo(prompt: string, gallery: GalleryImage[]): string {
   const kind = inferJewelryProductKind(prompt);
+  const necklace = isNecklaceProduct(prompt, gallery);
   const genderHints: string[] = [];
   const lower = prompt.toLowerCase();
   if (/女|女性|女士|girl|women|female/.test(lower)) genderHints.push("female");
@@ -147,6 +176,7 @@ function extractPromptKeyInfo(prompt: string, gallery: GalleryImage[]): string {
     .slice(0, 8);
   return [
     `product_kind=${kind}`,
+    `is_necklace=${necklace ? "yes" : "no"}`,
     `target_gender=${genderHints.join(",") || "unknown"}`,
     `style_keywords=${styleHints.join(",") || "unknown"}`,
     debugLines.length ? `image_prompt_hints=\n${debugLines.join("\n")}` : "image_prompt_hints=none",
@@ -302,15 +332,13 @@ export async function POST(req: Request) {
     }
 
     const keyInfo = extractPromptKeyInfo(prompt, galleryImages);
+    const necklaceProduct = isNecklaceProduct(prompt, galleryImages);
     const system = [
       "你是 Etsy 资深运营文案专家，负责基于珠宝产品图片与提示词信息生成可发布文案。",
       "必须只返回 JSON 对象，不要 Markdown，不要解释，不要代码块。",
       "JSON 结构固定：{title:string, description:string, tags:string[]}",
       "title 写作逻辑：给谁用 + 是什么 + 产品材质 + 风格 + 元素；符合 Etsy SEO；避免重复词；尽量写满 140 字符（不超过 140）。",
-      "description 核心原则：多用短句，让用户带入使用场景，写清楚产品优势，可使用少量 emoji。",
-      "description 必须按以下段落组织：Product Description、Care Instructions、Order & Shipping Note、Customization Service。",
-      "Order & Shipping Note 需覆盖手工定制周期、个体差异、图片仅参考、定制品非质量问题不退换等说明。",
-      "可参考表达：Each ring is handcrafted to order, so please allow 21–28 business days for production before shipping...",
+      buildStep4DescriptionRulesBlock(necklaceProduct),
       "tags 必须是 13 个英文标签，严格命中产品特点，不要宽泛词；每个 tag <= 20 字符；不要重复。",
       "tags 需要按 SEO 逻辑输出高意图关键词（材质、工艺、风格、元素、场景、礼赠对象）。",
       "严格按用户模板生成：",

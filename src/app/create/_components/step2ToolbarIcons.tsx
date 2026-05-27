@@ -77,19 +77,23 @@ export function IconStep1Sparkles({ className }: { className?: string }) {
   );
 }
 
-/** Step4 历史档案入口：简约“档”字 icon。 */
+/** Step4 历史档案入口：`public/icons/step4-archive.png` */
 export function IconArchiveFile({ className }: { className?: string }) {
   return (
-    <span
-      aria-hidden
+    <img
+      src="/icons/step4-archive.png"
+      alt=""
+      width={18}
+      height={18}
+      decoding="async"
+      draggable={false}
       className={[
-        "pointer-events-none inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border border-[#2f2a23] bg-white text-[10px] font-semibold leading-none text-[#2f2a23] shadow-[inset_0_0_0_1px_rgba(47,42,35,0.04)]",
+        "pointer-events-none h-[18px] w-[18px] shrink-0 object-contain select-none invert",
         className,
       ]
         .filter(Boolean)
         .join(" ")}
-    >
-      档
-    </span>
+      aria-hidden
+    />
   );
 }

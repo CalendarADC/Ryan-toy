@@ -464,7 +464,8 @@ export default function Step3ImageGallery() {
       id,
       name: `模板 ${copyTemplates.length + 1}`,
       titleFormat: "输出英文 Etsy 标题，120-140 字符。",
-      descriptionFormat: "输出英文描述，分段清晰，便于直接发布。",
+      descriptionFormat:
+        "Product Description → Material → Care Instructions → Order & Shipping → Customization；emoji≤3；有宝石写锆石色与种类；项链写 40cm/60cm 链长。",
       tagsFormat: "输出 13 个英文 tags，数组返回，每个 <=20 字符。",
       createdAt: now,
       updatedAt: now,
