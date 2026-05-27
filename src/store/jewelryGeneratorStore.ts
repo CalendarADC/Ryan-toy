@@ -44,10 +44,12 @@ import {
 
 import type {
   AIProvider,
+  CopyTemplate,
   Copywriting,
   GalleryImage,
   GalleryImageSelector,
   GalleryImageType,
+  GeneratedCopyRecord,
   GeneratorTask,
   ImageApiVendor,
   JewelryGeneratorStore,
@@ -71,10 +73,12 @@ import {
 
 export type {
   AIProvider,
+  CopyTemplate,
   Copywriting,
   GalleryImage,
   GalleryImageSelector,
   GalleryImageType,
+  GeneratedCopyRecord,
   GeneratorTask,
   ImageApiVendor,
   JewelryGeneratorStore,
@@ -187,6 +191,95 @@ function resolveImageApiAuth(args: {
     return { imageApiVendor: vendor, missingError: "请先在顶部密钥中选择 LaoZhang 并填写 API Key。" };
   }
   return { imageApiVendor: vendor, laozhangApiKey: laozhang, kieApiKey: kie || undefined };
+}
+
+function createCopyTemplateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `copy_tpl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function defaultCopyTemplate(): CopyTemplate {
+  const t = new Date().toISOString();
+  return {
+    id: createCopyTemplateId(),
+    name: "Etsy 标准模板",
+    titleFormat:
+      "输出英文 Etsy Title，120-140 字符，包含品类、材质、核心元素、风格、受众关键词，避免重复堆词。",
+    descriptionFormat:
+      "输出英文 Description，4-6 段：开场卖点、细节特征、佩戴场景、礼赠场景、护理建议。语言自然可读。",
+    tagsFormat:
+      "输出 13 个英文 tags，数组返回。每个 tag <= 20 字符；避免重复；优先高意图搜索词。",
+    createdAt: t,
+    updatedAt: t,
+  };
+}
+
+function normalizeCopyTemplate(input: Partial<CopyTemplate>): CopyTemplate {
+  const t = new Date().toISOString();
+  return {
+    id: typeof input.id === "string" && input.id.trim() ? input.id.trim() : createCopyTemplateId(),
+    name:
+      typeof input.name === "string" && input.name.trim()
+        ? input.name.trim().slice(0, 60)
+        : "未命名模板",
+    titleFormat: typeof input.titleFormat === "string" ? input.titleFormat.trim() : "",
+    descriptionFormat:
+      typeof input.descriptionFormat === "string" ? input.descriptionFormat.trim() : "",
+    tagsFormat: typeof input.tagsFormat === "string" ? input.tagsFormat.trim() : "",
+    createdAt: typeof input.createdAt === "string" && input.createdAt.trim() ? input.createdAt : t,
+    updatedAt: t,
+  };
+}
+
+function normalizeCopyTemplatesForStore(input: CopyTemplate[] | undefined): CopyTemplate[] {
+  const normalized = Array.isArray(input) ? input.map((x) => normalizeCopyTemplate(x)) : [];
+  return normalized.length ? normalized : [defaultCopyTemplate()];
+}
+
+function resolveActiveCopyTemplateId(
+  templates: CopyTemplate[],
+  desired?: string | null
+): string | null {
+  if (!templates.length) return null;
+  if (desired && templates.some((x) => x.id === desired)) return desired;
+  return templates[0]!.id;
+}
+
+function createCopyHistoryRecord(args: {
+  selectedMainImageId: string | null;
+  selectedMainImageUrl: string | null;
+  sourceImages: GalleryImage[];
+  templateId: string | null;
+  templateName: string;
+  copywriting: Copywriting;
+}): GeneratedCopyRecord {
+  return {
+    id:
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `copy_rec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+    createdAt: new Date().toISOString(),
+    sourceMainImageId: args.selectedMainImageId,
+    sourceMainImageUrl: args.selectedMainImageUrl,
+    sourceImageIds: args.sourceImages.map((x) => x.id),
+    templateId: args.templateId,
+    templateName: args.templateName,
+    copywriting: {
+      title: args.copywriting.title,
+      tags: [...(args.copywriting.tags ?? [])],
+      description: args.copywriting.description,
+    },
+  };
+}
+
+function createDefaultCopyTemplateState(): {
+  copyTemplates: CopyTemplate[];
+  activeCopyTemplateId: string | null;
+} {
+  const tpl = defaultCopyTemplate();
+  return { copyTemplates: [tpl], activeCopyTemplateId: tpl.id };
 }
 
 async function compressDataUrlForEnhanceTransport(dataUrl: string, maxBytes = 2_600_000): Promise<string> {
@@ -338,6 +431,9 @@ function pickTaskMeta(s: JewelryGeneratorStore): TaskWorkspaceMeta {
     selectedMainImageUrl: s.selectedMainImageUrl,
     selectedMainImageIds: s.selectedMainImageIds,
     copywriting: s.copywriting,
+    copyTemplates: s.copyTemplates,
+    activeCopyTemplateId: s.activeCopyTemplateId,
+    copyHistory: s.copyHistory,
     lastTextModelUsed: s.lastTextModelUsed,
     lastImageCountPassed: s.lastImageCountPassed,
   };
@@ -509,6 +605,11 @@ function buildSwitchedWorkspacePatch(
   derived: TaskSwitchDerived
 ): Partial<JewelryGeneratorStore> {
   const now = new Date().toISOString();
+  const copyTemplates = normalizeCopyTemplatesForStore(loaded.meta.copyTemplates);
+  const activeCopyTemplateId = resolveActiveCopyTemplateId(
+    copyTemplates,
+    loaded.meta.activeCopyTemplateId
+  );
   return {
     activeTaskId: taskId,
     status: idleGeneratorStatus(),
@@ -533,6 +634,9 @@ function buildSwitchedWorkspacePatch(
     selectedMainImageUrl: derived.primaryImg?.url ?? null,
     selectedMainImageIds: derived.selectedMainImageIds,
     copywriting: loaded.meta.copywriting,
+    copyTemplates,
+    activeCopyTemplateId,
+    copyHistory: Array.isArray(loaded.meta.copyHistory) ? loaded.meta.copyHistory : [],
     lastTextModelUsed: loaded.meta.lastTextModelUsed,
     lastImageCountPassed: loaded.meta.lastImageCountPassed,
     mainImages: loaded.mainImages,
@@ -619,6 +723,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
       galleryImages: [],
       galleryHistoryImages: [],
       copywriting: emptyCopywriting,
+      ...createDefaultCopyTemplateState(),
+      copyHistory: [],
 
       status: idleGeneratorStatus(),
       error: null,
@@ -682,6 +788,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           galleryImages: [],
           galleryHistoryImages: [],
           copywriting: emptyCopywriting,
+          ...createDefaultCopyTemplateState(),
+          copyHistory: [],
           status: idleGeneratorStatus(),
           error: null,
           lastTextModelUsed: null,
@@ -857,6 +965,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           galleryImages: [],
           galleryHistoryImages: [],
           copywriting: emptyCopywriting,
+          ...createDefaultCopyTemplateState(),
+          copyHistory: [],
           status: idleGeneratorStatus(),
           error: null,
           lastTextModelUsed: null,
@@ -945,6 +1055,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         const kieKeyResolved = preservedKieKey || (loaded.meta.kieApiKey ?? "").trim() || "";
         const imageApiVendorResolved =
           loaded.meta.imageApiVendor === "kie" || preservedImageVendor === "kie" ? "kie" : "laozhang";
+        const copyTemplates = normalizeCopyTemplatesForStore(loaded.meta.copyTemplates);
+        const activeCopyTemplateId = resolveActiveCopyTemplateId(
+          copyTemplates,
+          loaded.meta.activeCopyTemplateId
+        );
         writeScopedLaozhangApiKey(laozhangKeyResolved);
         writeScopedKieApiKey(kieKeyResolved);
         writeScopedImageApiVendor(imageApiVendorResolved);
@@ -964,6 +1079,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           selectedMainImageUrl: primaryImg?.url ?? null,
           selectedMainImageIds,
           copywriting: loaded.meta.copywriting,
+          copyTemplates,
+          activeCopyTemplateId,
+          copyHistory: Array.isArray(loaded.meta.copyHistory) ? loaded.meta.copyHistory : [],
           lastTextModelUsed: loaded.meta.lastTextModelUsed,
           lastImageCountPassed: loaded.meta.lastImageCountPassed,
           mainImages: loaded.mainImages,
@@ -1074,6 +1192,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           galleryImages: [],
           galleryHistoryImages: [],
           copywriting: emptyCopywriting,
+          ...createDefaultCopyTemplateState(),
+          copyHistory: [],
           error: null,
           lastTextModelUsed: null,
           lastImageCountPassed: null,
@@ -1232,6 +1352,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           loaded.meta.imageApiVendor === "kie" || readScopedImageApiVendor() === "kie"
             ? "kie"
             : "laozhang";
+        const copyTemplates = normalizeCopyTemplatesForStore(loaded.meta.copyTemplates);
+        const activeCopyTemplateId = resolveActiveCopyTemplateId(
+          copyTemplates,
+          loaded.meta.activeCopyTemplateId
+        );
         set({
           tasks: nextTasks.map((t) => (t.id === nextId ? { ...t, updatedAt: now } : t)),
           activeTaskId: nextId,
@@ -1251,6 +1376,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           selectedMainImageUrl: primaryImg?.url ?? null,
           selectedMainImageIds,
           copywriting: loaded.meta.copywriting,
+          copyTemplates,
+          activeCopyTemplateId,
+          copyHistory: Array.isArray(loaded.meta.copyHistory) ? loaded.meta.copyHistory : [],
           lastTextModelUsed: loaded.meta.lastTextModelUsed,
           lastImageCountPassed: loaded.meta.lastImageCountPassed,
           mainImages: loaded.mainImages,
@@ -2390,7 +2518,66 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
       },
 
-      generateCopywriting: async () => {
+      setCopyTemplates: (templates) => {
+        const nextTemplates = normalizeCopyTemplatesForStore(templates);
+        set((state) => ({
+          copyTemplates: nextTemplates,
+          activeCopyTemplateId: resolveActiveCopyTemplateId(
+            nextTemplates,
+            state.activeCopyTemplateId
+          ),
+        }));
+        const s = get();
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
+      },
+
+      upsertCopyTemplate: (template) => {
+        const normalized = normalizeCopyTemplate(template);
+        set((state) => {
+          const exists = state.copyTemplates.some((x) => x.id === normalized.id);
+          const nextTemplates = exists
+            ? state.copyTemplates.map((x) => (x.id === normalized.id ? normalized : x))
+            : [normalized, ...state.copyTemplates];
+          return {
+            copyTemplates: nextTemplates,
+            activeCopyTemplateId: normalized.id,
+          };
+        });
+        const s = get();
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
+      },
+
+      deleteCopyTemplate: (templateId) => {
+        set((state) => {
+          const remain = state.copyTemplates.filter((x) => x.id !== templateId);
+          const nextTemplates = remain.length ? remain : [defaultCopyTemplate()];
+          const nextActive = resolveActiveCopyTemplateId(nextTemplates, state.activeCopyTemplateId);
+          return {
+            copyTemplates: nextTemplates,
+            activeCopyTemplateId: nextActive,
+          };
+        });
+        const s = get();
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
+      },
+
+      setActiveCopyTemplateId: (templateId) => {
+        set((state) => ({
+          activeCopyTemplateId: resolveActiveCopyTemplateId(state.copyTemplates, templateId),
+        }));
+        const s = get();
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
+      },
+
+      deleteCopyHistoryRecord: (recordId) => {
+        set((state) => ({
+          copyHistory: state.copyHistory.filter((x) => x.id !== recordId),
+        }));
+        const s = get();
+        if (tasksHydrated) scheduleDebouncedTaskMetaSave(s.activeTaskId, pickTaskMeta(s));
+      },
+
+      generateCopywriting: async (args) => {
         const {
           prompt,
           provider,
@@ -2398,20 +2585,21 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           selectedMainImageId,
           selectedMainImageUrl,
           galleryImages,
-          laozhangApiKey,
+          copyTemplates,
+          activeCopyTemplateId,
         } = get();
+        const sourceImages =
+          args?.sourceImages && args.sourceImages.length ? args.sourceImages : galleryImages;
+        const selectedTemplateId = args?.templateId ?? activeCopyTemplateId;
+        const selectedTemplate =
+          copyTemplates.find((x) => x.id === selectedTemplateId) ?? copyTemplates[0] ?? null;
 
         if (!selectedMainImageId) {
           set({ error: "请先在 Step 2 选择一张主视图。" });
           return;
         }
-        if (!selectedMainImageUrl && !galleryImages.length) {
+        if (!selectedMainImageUrl && !sourceImages.length) {
           set({ error: "没有可用的产品图：请先在 Step 2 生成并选中主视图。" });
-          return;
-        }
-        const effectiveLaozhangApiKey = laozhangApiKey.trim() || readScopedLaozhangApiKey();
-        if (!effectiveLaozhangApiKey) {
-          set({ error: "请先在 Step1 顶部填写老张 API Key。" });
           return;
         }
 
@@ -2421,18 +2609,23 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         });
 
         try {
-          const res = await fetch("/api/generate-copy", {
-            method: "POST",
-            headers: jsonApiHeaders({ laozhangApiKey: effectiveLaozhangApiKey }),
-            body: JSON.stringify({
-              provider,
-              taskId: activeTaskId,
-              prompt,
-              selectedMainImageId,
-              selectedMainImageUrl: selectedMainImageUrl ?? undefined,
-              galleryImages,
-            }),
-          });
+          const res = await fetchJsonWithTimeout(
+            "/api/generate-copy",
+            {
+              method: "POST",
+              headers: jsonApiHeaders(),
+              body: JSON.stringify({
+                provider,
+                taskId: activeTaskId,
+                prompt,
+                selectedMainImageId,
+                selectedMainImageUrl: selectedMainImageUrl ?? undefined,
+                galleryImages: sourceImages,
+                copyTemplate: selectedTemplate,
+              }),
+            },
+            200_000
+          );
 
           if (!res.ok) {
             const data = (await res.json().catch(() => null)) as ApiError | null;
@@ -2444,13 +2637,23 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             debug_image_count?: number | null;
           };
           const data = (await res.json()) as GenerateCopyResponse;
+          const nextCopywriting: Copywriting = {
+            title: data.title ?? "",
+            tags: data.tags ?? [],
+            description: data.description ?? "",
+          };
+          const historyRecord = createCopyHistoryRecord({
+            selectedMainImageId,
+            selectedMainImageUrl,
+            sourceImages,
+            templateId: selectedTemplate?.id ?? null,
+            templateName: selectedTemplate?.name ?? "默认模板",
+            copywriting: nextCopywriting,
+          });
 
           set({
-            copywriting: {
-              title: data.title ?? "",
-              tags: data.tags ?? [],
-              description: data.description ?? "",
-            },
+            copywriting: nextCopywriting,
+            copyHistory: [historyRecord, ...get().copyHistory].slice(0, 200),
             lastTextModelUsed:
               typeof data.debug_used_model === "string" ? data.debug_used_model : null,
             lastImageCountPassed:
@@ -2628,6 +2831,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             writeScopedLaozhangApiKey(laozhangKeyResolved);
             writeScopedKieApiKey(kieKeyResolved);
             writeScopedImageApiVendor(imageApiVendorResolved);
+            const copyTemplates = normalizeCopyTemplatesForStore(loaded.meta.copyTemplates);
+            const activeCopyTemplateId = resolveActiveCopyTemplateId(
+              copyTemplates,
+              loaded.meta.activeCopyTemplateId
+            );
             useJewelryGeneratorStore.setState({
               provider: loaded.meta.provider,
               prompt: promptResolved,
@@ -2644,6 +2852,9 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
               selectedMainImageUrl: loaded.meta.selectedMainImageUrl,
               selectedMainImageIds: loaded.meta.selectedMainImageIds,
               copywriting: loaded.meta.copywriting,
+              copyTemplates,
+              activeCopyTemplateId,
+              copyHistory: Array.isArray(loaded.meta.copyHistory) ? loaded.meta.copyHistory : [],
               lastTextModelUsed: loaded.meta.lastTextModelUsed,
               lastImageCountPassed: loaded.meta.lastImageCountPassed,
               mainImages: loaded.mainImages,

@@ -12,6 +12,7 @@ import {
 } from "@/lib/ai/AIService";
 import {
   expandStep1PromptWithAi,
+  resolveCompanionElementPolicy,
   step1ExpandFailureUserHint,
 } from "@/lib/ai/step1PromptAiExpander";
 import {
@@ -298,6 +299,23 @@ export async function POST(req: Request) {
     const isReferenceEdit =
       refCount > 0 && userPromptIsReferenceEditInstruction(prompt);
     const promptOriginal = prompt.trim();
+    const companionPolicy = resolveCompanionElementPolicy(promptOriginal);
+    const primaryCompanionConstraint =
+      companionPolicy === "forbid_add"
+        ? [
+            "PRIMARY + COMPANION ELEMENT POLICY (strict): user explicitly requests a single element only.",
+            "Do NOT add any new companion motif. Deepen only the user-specified primary element.",
+          ].join("\n")
+        : companionPolicy === "auto_add_one"
+          ? [
+              "PRIMARY + COMPANION ELEMENT POLICY (strict): treat the user motif as the single primary theme.",
+              "Add exactly ONE companion element that supports the primary motif, and describe/reflect a clear structural connection between them.",
+              "Never introduce a third motif or turn the companion into a second equal theme.",
+            ].join("\n")
+          : [
+              "PRIMARY + COMPANION ELEMENT POLICY (strict): user already requests multiple motifs.",
+              "Do NOT auto-add any extra motif beyond user intent.",
+            ].join("\n");
     const keywordBoosters = isReferenceEdit ? "" : appendKeywordBoosters(prompt);
     let semanticExpansion = isReferenceEdit
       ? ""
@@ -406,6 +424,7 @@ export async function POST(req: Request) {
           referencePreamble,
           cappyCalmLock,
           strictSceneToneLock,
+          primaryCompanionConstraint,
           productionSoftLimits,
           buildSingleJewelryPieceOnlyConstraintBlock(),
           batchDiversity,
@@ -415,10 +434,10 @@ export async function POST(req: Request) {
       : refCount > 0
         ? `${referencePreamble}${cappyCalmLock ? `\n\n${cappyCalmLock}` : ""}${
             strictSceneToneLock ? `\n\n${strictSceneToneLock}` : ""
-          }\n\n${systemPrompt}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
+          }\n\n${systemPrompt}\n\n${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
             batchDiversity ? `\n\n${batchDiversity}` : ""
           }`
-        : `${systemPrompt}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
+        : `${systemPrompt}\n\n${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
             batchDiversity ? `\n\n${batchDiversity}` : ""
           }`;
 

@@ -63,17 +63,28 @@ export function resolveCompanionElementPolicy(userPrompt: string): CompanionElem
 
 export const STEP1_EXPAND_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
 export const STEP1_EXPAND_DEFAULT_MODEL = "ark-code-latest";
+/** Step4 文案固定走方舟 Coding 文本模型，不跟随 STEP1_EXPAND_MODEL（如 Kimi 思考版） */
+export const STEP4_COPY_DEFAULT_MODEL = "ark-code-latest";
 /** 火山方舟多模态识图；须在控制台开通，可用 STEP1_EXPAND_VISION_MODEL 覆盖 */
 export const STEP1_EXPAND_DEFAULT_VISION_MODEL = "doubao-1-5-vision-pro-32k-250115";
 
 export const STEP1_REFERENCE_VISION_MAX_IMAGES = 3;
 const STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT = 45_000;
 const STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX = 90_000;
+/** Step4 多模态文案：默认更长，可通过 STEP4_COPY_HTTP_TIMEOUT_MS 覆盖 */
+export const STEP4_COPY_HTTP_TIMEOUT_MS_DEFAULT = 120_000;
+export const STEP4_COPY_HTTP_TIMEOUT_MS_MAX = 300_000;
 
 function resolveStep1ExpandHttpTimeoutMs(): number {
   const raw = Number(process.env.STEP1_EXPAND_HTTP_TIMEOUT_MS ?? "");
   if (!Number.isFinite(raw) || raw <= 0) return STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT;
   return Math.max(8_000, Math.min(STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX, Math.floor(raw)));
+}
+
+export function resolveStep4CopyHttpTimeoutMs(): number {
+  const raw = Number(process.env.STEP4_COPY_HTTP_TIMEOUT_MS ?? "");
+  if (!Number.isFinite(raw) || raw <= 0) return STEP4_COPY_HTTP_TIMEOUT_MS_DEFAULT;
+  return Math.max(8_000, Math.min(STEP4_COPY_HTTP_TIMEOUT_MS_MAX, Math.floor(raw)));
 }
 
 export type Step1ExpandRuntimeConfig = {
@@ -123,6 +134,28 @@ export function resolveStep1ExpandRuntimeConfig(): Step1ExpandRuntimeConfig {
     process.env.STEP1_EXPAND_BASE_URL || STEP1_EXPAND_DEFAULT_BASE_URL
   ).replace(/\/+$/, "");
   const model = process.env.STEP1_EXPAND_MODEL || STEP1_EXPAND_DEFAULT_MODEL;
+  let baseUrlHost = baseUrl;
+  try {
+    baseUrlHost = new URL(baseUrl).host;
+  } catch {
+    /* keep raw */
+  }
+  return {
+    baseUrl,
+    model,
+    providerLabel: labelStep1ExpandProvider(baseUrl),
+    baseUrlHost,
+  };
+}
+
+/** Step4 文案：复用 STEP1_EXPAND 网关与 Key，模型固定 ark-code-latest（可用 STEP4_COPY_MODEL 覆盖） */
+export function resolveStep4CopyRuntimeConfig(): Step1ExpandRuntimeConfig {
+  const baseUrl = (
+    process.env.STEP4_COPY_BASE_URL?.trim() ||
+    process.env.STEP1_EXPAND_BASE_URL ||
+    STEP1_EXPAND_DEFAULT_BASE_URL
+  ).replace(/\/+$/, "");
+  const model = process.env.STEP4_COPY_MODEL?.trim() || STEP4_COPY_DEFAULT_MODEL;
   let baseUrlHost = baseUrl;
   try {
     baseUrlHost = new URL(baseUrl).host;
@@ -379,6 +412,22 @@ export function step1ExpandDesignObjectZh(kind: JewelryProductKind): string {
 export function buildStep1ExpandDisplayBackgroundClause(kind: JewelryProductKind): string {
   const obj = step1ExpandDesignObjectZh(kind);
   return `根据设计，把${obj}放到你认为合适的展示背景里`;
+}
+
+/** Step1 扩写：精致度与材质真实感约束（写入 system prompt） */
+export function buildStep1ExpandRefinementQualityBlock(): string {
+  return [
+    "=== 精致度与商业主图质量（硬性，优先于空泛形容词）===",
+    "精致度优先级：材质与工艺真实 > 主体结构清晰 > 光影与镜头高级 > 风格表达 > 创意变化。",
+    "必须写清金属类型与表面状态（如 S925 银、抛光/拉丝/轻氧化/镜面与哑光分区）。",
+    "必须写清镶嵌与结构细节（爪镶/包镶/钉镶、边缘倒角、戒臂厚薄趋势、连接关系、镶口金属间隙）。",
+    "宝石须写切型/色调/光学表现（通透、火彩方向、反射控制），避免只写颜色名。",
+    "必须给出专业珠宝商品摄影语义：微距特写、焦点落点、主光/轮廓光/反射控制，背景克制不抢主体。",
+    "风格词最多保留 1-2 个核心（如 vintage / gothic / minimalist），禁止风格堆叠冲突。",
+    "禁止塑料感、蜡感金属、糊纹理、脏阴影、过曝高光、卡通感、低级装饰堆砌。",
+    "若用户要求彼此冲突（如极暗背景但要高火彩），优先保证材质可读性与商品可售性。",
+    "内检（勿输出）：若未明确金属工艺、宝石光学、摄影光影控制，须在内部重写后再输出。",
+  ].join("\n");
 }
 
 /**
@@ -693,13 +742,18 @@ export async function postStep1ExpandChat(args: {
   temperature?: number;
   errorLabel?: string;
   maxTokens?: number;
+  /** 覆盖默认上游 HTTP 超时（Step4 文案等长耗时任务可传更大值） */
+  httpTimeoutMs?: number;
   /** Kimi K2：true=思考模式（质量更好）；false=快速模式 */
   enableThinking?: boolean;
   expandKind?: JewelryProductKind;
 }): Promise<string> {
   const apiKey = args.apiKey;
   const label = args.errorLabel ?? "Step1 AI";
-  const timeoutMs = resolveStep1ExpandHttpTimeoutMs();
+  const timeoutMs =
+    typeof args.httpTimeoutMs === "number" && Number.isFinite(args.httpTimeoutMs)
+      ? Math.max(8_000, Math.min(STEP4_COPY_HTTP_TIMEOUT_MS_MAX, Math.floor(args.httpTimeoutMs)))
+      : resolveStep1ExpandHttpTimeoutMs();
   const payload: Record<string, unknown> = {
     model: args.model,
     temperature: args.temperature ?? 0.85,
@@ -739,7 +793,7 @@ export async function postStep1ExpandChat(args: {
       const msg = netErr instanceof Error ? netErr.message : String(netErr);
       if (attempt === maxAttempts - 1) {
         const detail = aborted
-          ? `上游响应超时（>${timeoutMs}ms），请重试或改用快速扩写。`
+          ? `上游响应超时（>${timeoutMs}ms），请稍后重试。`
           : msg;
         throw new Error(`${label}失败（网络）：${detail}`);
       }
@@ -877,6 +931,8 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "视觉锚点默认加入少量数字参考（至少 2 个锚点带数字）：优先使用重心位置(如右上三分之一区域)、主次面积占比、层级数量、疏密/实虚比例、宝石颗数与落点节奏。",
     "数字参考应服务理解而非堆参数：优先区间/比例/分区描述，避免逐项毫米化。",
     "形容词必须绑定可见依据：例如把「高级」落到金属处理/镶口秩序/比例控制；禁止空泛词堆砌。",
+    "",
+    buildStep1ExpandRefinementQualityBlock(),
     "",
     "=== 主元素 + 辅助元素自动补全（硬约束）===",
     companionPolicyLine,

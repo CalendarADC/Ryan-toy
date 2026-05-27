@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
-import { useJewelryGeneratorStore, type GalleryImage } from "@/store/jewelryGeneratorStore";
+import { useRouter } from "next/navigation";
+import { useJewelryGeneratorStore, type CopyTemplate, type GalleryImage } from "@/store/jewelryGeneratorStore";
 import ImagePreviewModal from "./ImagePreviewModal";
 import BrandButton from "./BrandButton";
 import WindowedMount from "./WindowedMount";
@@ -12,7 +13,12 @@ import { downloadImage } from "@/lib/ui/downloadImage";
 import { applyStep1ReferenceFromGalleryUrl } from "@/lib/ui/applyStep1ReferenceFromGalleryUrl";
 import { CREATE_STEP_PAPER } from "./createStepShell";
 import { step1CircleBtnClass } from "./createToolbarCircleButton";
-import { IconStep2Favorites, IconStep2History } from "./step2ToolbarIcons";
+import {
+  IconStep1PresetGear,
+  IconStep1Sparkles,
+  IconStep2Favorites,
+  IconStep2History,
+} from "./step2ToolbarIcons";
 
 const STEP3_LAYOUT_STORAGE_KEY = "jewelry-step3-layout-v1";
 const STEP3_LAYOUT_DEBUG_KEY = "STEP3_LAYOUT_DEBUG";
@@ -30,6 +36,46 @@ function getDataUrlExt(url: string): string {
   if (url.startsWith("data:image/jpeg") || url.startsWith("data:image/jpg")) return "jpg";
   if (url.startsWith("data:image/webp")) return "webp";
   return "png";
+}
+
+function exportCopyTemplates(templates: CopyTemplate[]) {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    templates,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  a.href = url;
+  a.download = `gemmuse-copy-templates-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importCopyTemplates(text: string): CopyTemplate[] {
+  const parsed = JSON.parse(text) as unknown;
+  const input =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? ((parsed as { templates?: unknown }).templates ?? [])
+      : parsed;
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: CopyTemplate[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const tpl = item as CopyTemplate;
+    if (!tpl.id || !tpl.name) continue;
+    if (seen.has(tpl.id)) continue;
+    seen.add(tpl.id);
+    out.push(tpl);
+  }
+  return out;
 }
 
 /** 指针拖拽时根据悬停元素更新 Step3 高亮（与放置优先级一致）。 */
@@ -207,10 +253,18 @@ async function buildThumbDataUrlOnMainThread(
 }
 
 export default function Step3ImageGallery() {
+  const router = useRouter();
   const {
     galleryImages,
     galleryHistoryImages,
+    copyTemplates,
+    activeCopyTemplateId,
     status,
+    setCopyTemplates,
+    upsertCopyTemplate,
+    deleteCopyTemplate,
+    setActiveCopyTemplateId,
+    generateCopywriting,
     regenerateGalleryImage,
     deleteGalleryHistoryImagesBySelectors,
     toggleGalleryHistoryFavoriteBySelector,
@@ -224,6 +278,8 @@ export default function Step3ImageGallery() {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
   const [isZipping, setIsZipping] = useState(false);
+  const [copyTemplateMenuOpen, setCopyTemplateMenuOpen] = useState(false);
+  const copyTemplateImportRef = useRef<HTMLInputElement>(null);
 
   // 用于“多选下载ZIP / 历史删除”（按实例键，避免历史重复 id 串选）
   const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
@@ -373,6 +429,69 @@ export default function Step3ImageGallery() {
     for (const img of allKnownImages) map[getImageInstanceKey(img)] = img;
     return map;
   }, [allKnownImages]);
+
+  const selectedSourceImages = useMemo(() => {
+    const picked = selectedImageKeys
+      .map((k) => imageByKey[k])
+      .filter((x): x is GalleryImage => !!x && x.type !== "main");
+    if (picked.length) return picked;
+    return displayImages.filter((x) => x.type !== "main");
+  }, [displayImages, imageByKey, selectedImageKeys]);
+
+  const handleGenerateCopyFromStep3 = useCallback(async () => {
+    if (!selectedSourceImages.length) {
+      emitToast({ type: "error", message: "请先在 Step3 选择至少一张展示图。" });
+      return;
+    }
+    await generateCopywriting({
+      sourceImages: selectedSourceImages,
+      templateId: activeCopyTemplateId,
+    });
+    const next = useJewelryGeneratorStore.getState();
+    if (!next.error) {
+      router.push("/create/details");
+      emitToast({ type: "success", message: "文案已生成，已跳转到 Step4。" });
+    }
+  }, [activeCopyTemplateId, generateCopywriting, router, selectedSourceImages]);
+
+  const handleCreateTemplate = useCallback(() => {
+    const now = new Date().toISOString();
+    const id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `copy_tpl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    upsertCopyTemplate({
+      id,
+      name: `模板 ${copyTemplates.length + 1}`,
+      titleFormat: "输出英文 Etsy 标题，120-140 字符。",
+      descriptionFormat: "输出英文描述，分段清晰，便于直接发布。",
+      tagsFormat: "输出 13 个英文 tags，数组返回，每个 <=20 字符。",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }, [copyTemplates.length, upsertCopyTemplate]);
+
+  const handleEditTemplate = useCallback(
+    (tpl: CopyTemplate) => {
+      const name = window.prompt("模板名称", tpl.name);
+      if (name == null) return;
+      const titleFormat = window.prompt("Title 格式规则", tpl.titleFormat);
+      if (titleFormat == null) return;
+      const descriptionFormat = window.prompt("Description 格式规则", tpl.descriptionFormat);
+      if (descriptionFormat == null) return;
+      const tagsFormat = window.prompt("Tags 格式规则", tpl.tagsFormat);
+      if (tagsFormat == null) return;
+      upsertCopyTemplate({
+        ...tpl,
+        name: name.trim() || tpl.name,
+        titleFormat: titleFormat.trim() || tpl.titleFormat,
+        descriptionFormat: descriptionFormat.trim() || tpl.descriptionFormat,
+        tagsFormat: tagsFormat.trim() || tpl.tagsFormat,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [upsertCopyTemplate]
+  );
 
   useEffect(() => {
     const keys = new Set(displayImages.map((x) => getImageInstanceKey(x)));
@@ -1119,6 +1238,146 @@ export default function Step3ImageGallery() {
             onClick={() => setViewMode((v) => (v === "history" ? "current" : "history"))}
           >
             <IconStep2History className="shrink-0" />
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={copyTemplateMenuOpen}
+              aria-label="文案模板管理"
+              title="文案格式导入/导出/修改/删除"
+              className={step1CircleBtnClass(copyTemplateMenuOpen, false)}
+              onClick={() => setCopyTemplateMenuOpen((v) => !v)}
+            >
+              <IconStep1PresetGear className="shrink-0" />
+            </button>
+            {copyTemplateMenuOpen ? (
+              <div className="absolute left-0 top-full z-[50] mt-1.5 min-w-[360px] max-w-[min(100vw-2rem,560px)] overflow-hidden rounded-xl border border-[rgba(94,111,130,0.18)] bg-[var(--create-surface-paper)] p-2 shadow-lg">
+                <div className="max-h-[280px] space-y-1 overflow-y-auto">
+                  {copyTemplates.map((tpl) => {
+                    const isActive = activeCopyTemplateId === tpl.id;
+                    return (
+                      <div
+                        key={tpl.id}
+                        className="rounded-lg border border-[rgba(94,111,130,0.14)] bg-white p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            className={[
+                              "truncate text-left text-sm",
+                              isActive ? "font-semibold text-amber-900" : "text-[#363028]",
+                            ].join(" ")}
+                            onClick={() => setActiveCopyTemplateId(tpl.id)}
+                          >
+                            {tpl.name}
+                          </button>
+                          <div className="flex items-center gap-1">
+                            <BrandButton
+                              type="button"
+                              variant="outline"
+                              shape="full"
+                              className="h-[28px] px-2 text-[11px]"
+                              onClick={() => handleEditTemplate(tpl)}
+                            >
+                              修改
+                            </BrandButton>
+                            <BrandButton
+                              type="button"
+                              variant="danger"
+                              shape="full"
+                              className="h-[28px] px-2 text-[11px]"
+                              onClick={() => deleteCopyTemplate(tpl.id)}
+                            >
+                              删除
+                            </BrandButton>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center gap-1 border-t border-[rgba(94,111,130,0.14)] pt-2">
+                  <BrandButton
+                    type="button"
+                    variant="outline"
+                    shape="full"
+                    className="h-[32px] min-w-0 flex-1 px-2 text-xs"
+                    onClick={handleCreateTemplate}
+                  >
+                    新建模板
+                  </BrandButton>
+                  <BrandButton
+                    type="button"
+                    variant="outline"
+                    shape="full"
+                    className="h-[32px] px-2 text-xs"
+                    onClick={() => exportCopyTemplates(copyTemplates)}
+                    disabled={!copyTemplates.length}
+                  >
+                    导出
+                  </BrandButton>
+                  <BrandButton
+                    type="button"
+                    variant="outline"
+                    shape="full"
+                    className="h-[32px] px-2 text-xs"
+                    onClick={() => copyTemplateImportRef.current?.click()}
+                  >
+                    导入
+                  </BrandButton>
+                  <BrandButton
+                    type="button"
+                    variant="outline"
+                    shape="full"
+                    className="h-[32px] px-2 text-xs"
+                    onClick={() => setCopyTemplateMenuOpen(false)}
+                  >
+                    关闭
+                  </BrandButton>
+                </div>
+                <input
+                  ref={copyTemplateImportRef}
+                  type="file"
+                  className="hidden"
+                  accept=".json,application/json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    void file.text().then((text) => {
+                      try {
+                        const imported = importCopyTemplates(text);
+                        const existing = new Set(copyTemplates.map((x) => x.id));
+                        const merged = [
+                          ...imported.map((x) =>
+                            existing.has(x.id)
+                              ? { ...x, id: `${x.id}-${Date.now().toString(36)}` }
+                              : x
+                          ),
+                          ...copyTemplates,
+                        ];
+                        setCopyTemplates(merged);
+                        setActiveCopyTemplateId(merged[0]?.id ?? null);
+                      } catch {
+                        emitToast({ type: "error", message: "模板导入失败，请检查 JSON 格式。" });
+                      }
+                    });
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            aria-label="按模板生成文案"
+            title="按 Step3 选图 + 模板生成文案"
+            className={step1CircleBtnClass(false, status.step4Generating || status.step3Generating)}
+            onClick={() => void handleGenerateCopyFromStep3()}
+          >
+            <IconStep1Sparkles className="shrink-0" />
           </button>
 
           <BrandButton

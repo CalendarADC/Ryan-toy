@@ -2,8 +2,10 @@ import { del as idbDel, get as idbGet, set as idbSet } from "idb-keyval";
 
 import type {
   AIProvider,
+  CopyTemplate,
   Copywriting,
   GalleryImage,
+  GeneratedCopyRecord,
   ImageApiVendor,
   MainImage,
   Step1ExpansionStrength,
@@ -53,6 +55,9 @@ export type TaskWorkspaceMeta = {
   selectedMainImageUrl: string | null;
   selectedMainImageIds: string[];
   copywriting: Copywriting;
+  copyTemplates: CopyTemplate[];
+  activeCopyTemplateId: string | null;
+  copyHistory: GeneratedCopyRecord[];
   lastTextModelUsed: string | null;
   lastImageCountPassed: number | null;
 };
@@ -73,6 +78,9 @@ export const defaultTaskWorkspaceMeta = (): TaskWorkspaceMeta => ({
   selectedMainImageUrl: null,
   selectedMainImageIds: [],
   copywriting: { title: "", tags: [], description: "" },
+  copyTemplates: [],
+  activeCopyTemplateId: null,
+  copyHistory: [],
   lastTextModelUsed: null,
   lastImageCountPassed: null,
 });

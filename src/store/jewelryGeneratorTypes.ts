@@ -61,6 +61,27 @@ export type Copywriting = {
   description: string;
 };
 
+export type CopyTemplate = {
+  id: string;
+  name: string;
+  titleFormat: string;
+  descriptionFormat: string;
+  tagsFormat: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GeneratedCopyRecord = {
+  id: string;
+  createdAt: string;
+  sourceMainImageId: string | null;
+  sourceMainImageUrl: string | null;
+  sourceImageIds: string[];
+  templateId: string | null;
+  templateName: string;
+  copywriting: Copywriting;
+};
+
 /** 左侧任务分组：每个任务有独立工作区（IndexedDB 按 taskId 分库存） */
 export type GeneratorTask = {
   id: string;
@@ -129,6 +150,9 @@ export type JewelryGeneratorStore = {
 
   // ========== Step 4 输出 ==========
   copywriting: Copywriting;
+  copyTemplates: CopyTemplate[];
+  activeCopyTemplateId: string | null;
+  copyHistory: GeneratedCopyRecord[];
 
   // ========== UI 状态 ==========
   status: GeneratorStatus;
@@ -206,5 +230,10 @@ export type JewelryGeneratorStore = {
 
   // Step 4: 设置/生成文案
   setCopywriting: (next: Copywriting) => void;
-  generateCopywriting: () => Promise<void>;
+  setCopyTemplates: (templates: CopyTemplate[]) => void;
+  upsertCopyTemplate: (template: CopyTemplate) => void;
+  deleteCopyTemplate: (templateId: string) => void;
+  setActiveCopyTemplateId: (templateId: string | null) => void;
+  deleteCopyHistoryRecord: (recordId: string) => void;
+  generateCopywriting: (args?: { sourceImages?: GalleryImage[]; templateId?: string | null }) => Promise<void>;
 };
