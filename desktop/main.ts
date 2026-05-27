@@ -278,12 +278,21 @@ function bundledNextChildEnv(
 }
 
 /**
- * 打包后 `app.getAppPath()` 含 `app.asar`；`existsSync`/脚本路径可用该逻辑路径。
- * 但 Windows 上子进程 `cwd` 不能是 `…\app.asar\…` 这种「归档内伪目录」，否则 CreateProcess 失败
- *（常报 `spawn … GemMuseDesktop.exe ENOENT`）。Next standalone 的 `server.js` 会 `chdir(__dirname)`，
- * 故此处 `cwd` 用 exe 所在真实目录即可。
+ * 安装包内 Next standalone 放在 `resources/next-standalone`（extraResources），
+ * 避免在 app.asar 内 chdir 失败导致找不到 `.next/BUILD_ID`。
  */
+function resolvePackagedStandaloneDir(appRoot: string): string {
+  if (!app.isPackaged) return join(appRoot, ".next", "standalone");
+  const external = join(process.resourcesPath, "next-standalone");
+  if (existsSync(join(external, "server.js"))) return external;
+  return join(appRoot, ".next", "standalone");
+}
+
+/** 子进程 cwd：优先用已解压的真实 standalone 目录，以便 server.js 正常 chdir 并读取 `.next/BUILD_ID`。 */
 function spawnCwdForBundledNext(standaloneDir: string): string {
+  if (app.isPackaged && !/\.asar([\\/]|$)/i.test(standaloneDir)) {
+    return standaloneDir;
+  }
   if (process.platform === "win32" && app.isPackaged) return dirname(process.execPath);
   return standaloneDir;
 }
@@ -367,7 +376,7 @@ function startBundledNextServer() {
   if (nextProcess) return;
 
   const appRoot = app.getAppPath();
-  const standaloneDir = join(appRoot, ".next", "standalone");
+  const standaloneDir = resolvePackagedStandaloneDir(appRoot);
   const standaloneServer = join(standaloneDir, "server.js");
   if (existsSync(standaloneServer)) {
     nextProcess = spawnBundledNodeChild([standaloneServer], {

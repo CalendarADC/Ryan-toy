@@ -13,18 +13,31 @@ try {
   process.exit(0);
 }
 
-const marker = "Electron+asar: chdir into archive fails";
-if (s.includes(marker)) {
+if (s.includes("GEMMUSE_STANDALONE_ROOT") && s.includes("process.chdir(dir)")) {
   console.log("[patch-standalone-chdir] already applied");
   process.exit(0);
 }
 
-const needle = "process.chdir(__dirname)";
-if (!s.includes(needle)) {
-  console.warn("[patch-standalone-chdir] pattern not found, skip");
+const dirNeedle = "const dir = path.join(__dirname)";
+const dirReplacement =
+  "const dir = process.env.GEMMUSE_STANDALONE_ROOT\n  ? path.resolve(process.env.GEMMUSE_STANDALONE_ROOT)\n  : path.join(__dirname)";
+
+if (s.includes(dirNeedle) && !s.includes("GEMMUSE_STANDALONE_ROOT")) {
+  s = s.replace(dirNeedle, dirReplacement);
+}
+
+const chdirNeedle = "process.chdir(__dirname)";
+if (s.includes(chdirNeedle)) {
+  s = s.replace(
+    chdirNeedle,
+    `try {\n  process.chdir(dir)\n} catch {\n  try {\n    ${chdirNeedle}\n  } catch {\n    /* Electron+asar: chdir may fail on Windows. */\n  }\n}`
+  );
+}
+
+if (s === readFileSync(server, "utf8")) {
+  console.warn("[patch-standalone-chdir] no changes applied");
   process.exit(0);
 }
 
-const replacement = `try {\n  ${needle}\n} catch {\n  /* Electron+asar: chdir into archive fails on Windows (ENOENT). */\n}`;
-writeFileSync(server, s.replace(needle, replacement), "utf8");
+writeFileSync(server, s, "utf8");
 console.log("[patch-standalone-chdir] ok");

@@ -1,7 +1,7 @@
 {
   "name": "gemmuse",
-  "version": "2.11.0",
-  "description": "点燃您的奇思妙想！ v2.11.0",
+  "version": "2.11.1",
+  "description": "点燃您的奇思妙想！ v2.11.1",
   "author": "Ryan 丁",
   "private": true,
   "main": "dist-desktop/main.js",
@@ -62,9 +62,14 @@
       "output": "release-dist"
     },
     "files": [
-      ".next/standalone/**/*",
       "dist-desktop/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "next-standalone"
+      }
     ],
     "extraMetadata": {
       "main": "dist-desktop/main.js"
