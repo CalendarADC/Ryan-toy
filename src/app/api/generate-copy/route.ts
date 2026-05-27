@@ -56,7 +56,7 @@ const DEFAULT_COPY_TEMPLATE: CopyTemplate = {
   titleFormat:
     "输出英文 Etsy 标题，控制在 120-140 字符，覆盖品类、材质、主要元素、风格、受众词。",
   descriptionFormat:
-    "英文 Description：Product Description → Material → Care Instructions → Order & Shipping Note → Customization Service；全篇 emoji 不超过 3 个且勿作段落标题前缀；有宝石须写清锆石等种类与颜色，禁自然宝石表述。",
+    "英文 Description：Product Description → Material → Care Instructions → Order & Shipping Note → Customization Service；Material 材质须据识图+提示词判定（S925 / 18K Rose Gold Plated / Solid brass 三选一），禁止无依据瞎猜；全篇 emoji≤3；有宝石写锆石色与种类，禁天然宝石表述。",
   tagsFormat:
     "输出 13 个英文标签数组，每个 <= 20 字符，避免重复，优先高意图电商搜索词。",
   createdAt: "",
@@ -90,9 +90,16 @@ function buildStep4DescriptionRulesBlock(isNecklace: boolean): string {
     "description 核心原则：多用短句，让用户带入使用场景，写清楚产品优势。",
     "description emoji 规则（硬性）：禁止在每个段落标题或每条卖点前加 emoji（例如禁止「✨ Product Description」「💖 Care Instructions」）；全篇 description 内 emoji 总数不得超过 3 个，且仅用于点缀正文，不可充当列表符号。",
     "description 宝石规则（硬性）：若产品可见镶嵌宝石，必须在正文中写清宝石颜色与种类（一般为 zircon / cubic zirconia，可用商品色名如 champagne zircon、deep sea blue zircon 等）；禁止出现 natural gemstone、天然宝石、天然石、真宝石、precious stone、ruby/sapphire/emerald 等暗示天然贵重石的表述，除非用户原文已明确要求。",
+    "description 材质规则（硬性 — 禁止瞎猜）：",
+    "- 写 Material 段前必须先查看附带产品图（识图），并交叉核对用户 prompt 与 material_evidence 字段。",
+    "- 主材质只能在以下三者中择一作为正文主表述：S925 sterling silver、18K Rose Gold Plated、Solid brass。",
+    "- 禁止在无依据时随机挑选、轮换或「为了好听」默认写 18K Rose Gold Plated / rose gold plated。",
+    "- 判定优先级：① 产品图可见金属色泽与镀层 ② 用户 prompt / image_prompt_hints 中的明确材质词 ③ 若仍无法区分，只写「metal finish as shown in the product photos」并描述可见色泽，不得虚构未出现的镀层或材质名。",
+    "- 仅当图片或文案明确为「银底 + 玫瑰金镀层 / 分色镀金」等双层工艺时，才可写 S925 基底并说明 18K rose gold plated accents；否则只写一种主材质。",
+    "- Title、Material 段、tags 中的材质表述必须一致，且与识图结论一致。",
     "description 必须按以下段落顺序组织（段落标题用纯英文，标题行本身不要 emoji）：",
     "1) Product Description — 卖点与造型、佩戴/礼赠场景。",
-    "2) Material — 必须在 Care Instructions 之前单独成段；根据图片与提示词判断并明确写出材质（三选一或组合说明其一为主）：S925 sterling silver、18K Rose Gold Plated、Solid brass；并写清工艺/表面处理与产品特点（尺寸感、重量感、风格、适用人群等）。",
+    "2) Material — 必须在 Care Instructions 之前单独成段；仅写入经识图+提示词确认的主材质与工艺/表面处理、产品特点（尺寸感、重量感、风格、适用人群等）。",
     isNecklace
       ? "   若判定为项链类产品：Material 段必须写明提供 40cm 与 60cm 两种链长选项（或 40 cm / 60 cm length options）。"
       : "   若非项链：不要写链长选项。",
@@ -103,7 +110,54 @@ function buildStep4DescriptionRulesBlock(isNecklace: boolean): string {
   ].join("\n");
 }
 
-function extractPromptKeyInfo(prompt: string, gallery: GalleryImage[]): string {
+function inferCopyMaterialEvidence(prompt: string, gallery: GalleryImage[]): string {
+  const blob = [prompt, ...gallery.map((g) => g.debugPromptZh ?? "")]
+    .join("\n")
+    .toLowerCase();
+
+  const s925: string[] = [];
+  const rose: string[] = [];
+  const brass: string[] = [];
+
+  if (/s925|925\s*银|sterling\s*silver|纯银|银材|银戒|银吊坠|银戒指|silver\s*ring|silver\s*pendant/.test(blob)) {
+    s925.push("prompt/image hints: sterling silver / S925 / 银");
+  }
+  if (
+    /18k\s*rose|rose\s*gold\s*plated|镀金|镀玫瑰金|玫瑰金镀|金镀|gold\s*plated|gold-plated|k\s*金镀/.test(
+      blob
+    )
+  ) {
+    rose.push("prompt/image hints: 18K rose gold plated / 镀金");
+  }
+  if (/solid\s*brass|黄铜|红铜|铜材|\bbrass\b/.test(blob) && !/gold\s*plated|镀/.test(blob)) {
+    brass.push("prompt/image hints: solid brass / 黄铜");
+  }
+
+  const active = [
+    s925.length ? "s925" : null,
+    rose.length ? "rose_gold_plated" : null,
+    brass.length ? "brass" : null,
+  ].filter(Boolean);
+
+  const lines = [
+    `material_signals_s925=${s925.join("; ") || "none"}`,
+    `material_signals_rose_gold_plated=${rose.join("; ") || "none"}`,
+    `material_signals_brass=${brass.join("; ") || "none"}`,
+    `material_signal_count=${active.length}`,
+    active.length === 1
+      ? `material_suggested_primary=${active[0]} (from text hints only — must still confirm on product images)`
+      : active.length > 1
+        ? "material_suggested_primary=conflict (multiple text hints — resolve using product image metal color, do not guess)"
+        : "material_suggested_primary=unknown (must infer from attached product images; do not invent plating)",
+  ];
+  return lines.join("\n");
+}
+
+function extractPromptKeyInfo(
+  prompt: string,
+  gallery: GalleryImage[],
+  visionImageCount: number
+): string {
   const kind = inferJewelryProductKind(prompt);
   const necklace = isNecklaceProduct(prompt, gallery);
   const genderHints: string[] = [];
@@ -132,8 +186,10 @@ function extractPromptKeyInfo(prompt: string, gallery: GalleryImage[]): string {
   return [
     `product_kind=${kind}`,
     `is_necklace=${necklace ? "yes" : "no"}`,
+    `vision_images_attached=${visionImageCount}`,
     `target_gender=${genderHints.join(",") || "unknown"}`,
     `style_keywords=${styleHints.join(",") || "unknown"}`,
+    inferCopyMaterialEvidence(prompt, gallery),
     debugLines.length ? `image_prompt_hints=\n${debugLines.join("\n")}` : "image_prompt_hints=none",
   ].join("\n");
 }
@@ -308,8 +364,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "缺少 STEP1_EXPAND_API_KEY，无法生成文案。" }, { status: 500 });
     }
 
-    const keyInfo = extractPromptKeyInfo(prompt, galleryImages);
-    const necklaceProduct = isNecklaceProduct(prompt, galleryImages);
+    const keyInfo = extractPromptKeyInfo(prompt, visionGallery, debugImageCount);
+    const necklaceProduct = isNecklaceProduct(prompt, visionGallery);
     const system = [
       "你是 Etsy 资深运营文案专家，负责基于珠宝产品图片与提示词信息生成可发布文案。",
       "必须只返回 JSON 对象，不要 Markdown，不要解释，不要代码块。",
@@ -329,6 +385,8 @@ export async function POST(req: Request) {
       "",
       "从 Step3 图片与提示词提取的关键信息：",
       keyInfo,
+      "",
+      "重要：已附带产品图供识图。写 Material 段前必须先根据图片金属色泽确认主材质，再结合 material_evidence；不得在三者间随意猜测。",
       "",
       "请输出 JSON：title / description / tags。",
     ].join("\n");

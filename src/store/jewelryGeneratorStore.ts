@@ -209,7 +209,7 @@ function defaultCopyTemplate(): CopyTemplate {
     titleFormat:
       "输出英文 Etsy Title，120-140 字符，包含品类、材质、核心元素、风格、受众关键词，避免重复堆词。",
     descriptionFormat:
-      "英文 Description：Product Description → Material → Care Instructions → Order & Shipping → Customization；全篇 emoji≤3 且不作段首；有宝石写锆石色与种类，禁天然宝石表述；Material 写明 S925 / 18K Rose Gold Plated / Solid brass；项链须写 40cm 与 60cm 链长选项。",
+      "英文 Description：Product Description → Material → Care Instructions → Order & Shipping → Customization；Material 须据识图+提示词确认主材质（S925 / 18K Rose Gold Plated / Solid brass 三选一），禁止瞎猜；emoji≤3；有宝石写锆石色与种类；项链写 40cm/60cm 链长。",
     tagsFormat:
       "输出 13 个英文 tags，数组返回。每个 tag <= 20 字符；避免重复；优先高意图搜索词。",
     createdAt: t,

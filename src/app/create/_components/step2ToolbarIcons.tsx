@@ -77,23 +77,27 @@ export function IconStep1Sparkles({ className }: { className?: string }) {
   );
 }
 
-/** Step4 历史档案入口：`public/icons/step4-archive.png` */
+/** Step4 文案历史档案：使用产品提供的 History 图（`public/icons/step4-history.png`） */
 export function IconArchiveFile({ className }: { className?: string }) {
   return (
-    <img
-      src="/icons/step4-archive.png"
-      alt=""
-      width={18}
-      height={18}
-      decoding="async"
-      draggable={false}
+    <span
+      aria-hidden
       className={[
-        "pointer-events-none h-[18px] w-[18px] shrink-0 object-contain select-none invert",
+        "pointer-events-none inline-block h-[18px] w-[18px] shrink-0 bg-current text-[#454038]",
         className,
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-hidden
+      style={{
+        maskImage: "url(/icons/step4-history.png)",
+        maskRepeat: "no-repeat",
+        maskPosition: "center",
+        maskSize: "contain",
+        WebkitMaskImage: "url(/icons/step4-history.png)",
+        WebkitMaskRepeat: "no-repeat",
+        WebkitMaskPosition: "center",
+        WebkitMaskSize: "contain",
+      }}
     />
   );
 }

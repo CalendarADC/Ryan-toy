@@ -63,15 +63,16 @@ export function selectGalleryImagesForCopyVision(
 
   if (fb && !seen.has(fb)) {
     const mainFromGallery = gallery.find((x) => x.url?.trim() === fb);
-    picked.unshift(
-      mainFromGallery ?? {
+    if (mainFromGallery) {
+      picked.unshift(mainFromGallery);
+    } else {
+      picked.unshift({
         id: "copy-fallback-main",
         type: "main",
         url: fb,
-        sourceMainImageId: mainFromGallery?.sourceMainImageId,
-        debugPromptZh: mainFromGallery?.debugPromptZh,
-      }
-    );
+        sourceMainImageId: "copy-fallback-main",
+      });
+    }
     seen.add(fb);
   }
 

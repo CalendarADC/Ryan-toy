@@ -44,7 +44,7 @@ export async function mergeCopyGalleryWithTaskImages(args: {
         id: r.id,
         type: mapDbKindToGalleryType(r.kind),
         url: r.url,
-        sourceMainImageId: r.sourceMainImageId ?? undefined,
+        sourceMainImageId: r.sourceMainImageId ?? r.id,
         debugPromptZh: r.debugPromptZh ?? undefined,
       } satisfies GalleryImage,
     ])
