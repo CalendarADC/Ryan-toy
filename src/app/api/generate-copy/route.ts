@@ -8,6 +8,11 @@ import {
   resolveStep4CopyRuntimeConfig,
   sanitizeStep1ReferenceImageUrls,
 } from "@/lib/ai/step1PromptAiExpander";
+import {
+  collectCopyVisionImageUrls,
+  selectGalleryImagesForCopyVision,
+} from "@/lib/copy/copyVisionGallery";
+import { mergeCopyGalleryWithTaskImages } from "@/lib/copy/resolveCopyVisionFromTask";
 import { inferJewelryProductKind } from "@/lib/ai/jewelrySoftLimits";
 import { requireApiActiveUser } from "@/lib/apiAuth";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
@@ -26,69 +31,19 @@ type Body = {
   copyTemplate?: CopyTemplate | null;
 };
 
-function collectVisionImageUrls(
-  gallery: GalleryImage[],
-  fallbackMainUrl?: string
-): string[] {
-  const order = (t: string) => {
-    if (t === "main") return 0;
-    if (t === "on_model") return 1;
-    if (t === "top" || t === "front" || t === "left" || t === "right" || t === "rear" || t === "side")
-      return 2;
-    return 3;
-  };
-  const sorted = [...gallery].sort((a, b) => order(a.type) - order(b.type));
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  const fb = fallbackMainUrl?.trim();
-  const typeCount: Record<
-    "main" | "on_model" | "left" | "right" | "rear" | "front",
-    number
-  > = {
-    main: 0,
-    on_model: 0,
-    left: 0,
-    right: 0,
-    rear: 0,
-    front: 0,
-  };
-  for (const g of sorted) {
-    const u = g.url?.trim();
-    if (!u) continue;
-    if (seen.has(u)) continue;
+/** 单张 data URL 上限，避免网页 POST 触发平台 413 */
+const MAX_COPY_VISION_DATA_URL_CHARS = 1_200_000;
 
-    // ???????? ??????????? top?? ??? front ??
-    const rawType = g.type as string;
-    const t: keyof typeof typeCount =
-      rawType === "side"
-        ? "left"
-        : rawType === "top"
-          ? "front"
-          : (g.type as keyof typeof typeCount);
-    if (!(t in typeCount)) continue;
-
-    // ???????
-    // 1) ??????????????main ???? 1 ??
-    // 2) ???????? 1 ????????????????
-    if (t === "main" && fb && u !== fb) continue;
-    if (t === "main" && typeCount.main >= 1) continue;
-    if (t === "on_model" && typeCount.on_model >= 1) continue;
-    if (t === "left" && typeCount.left >= 1) continue;
-    if (t === "right" && typeCount.right >= 1) continue;
-    if (t === "rear" && typeCount.rear >= 1) continue;
-    if (t === "front" && typeCount.front >= 1) continue;
-
-    seen.add(u);
-    if (t in typeCount) typeCount[t] += 1;
-    urls.push(u);
-    if (urls.length >= 3) break;
-  }
-  if (fb && !seen.has(fb)) {
-    seen.add(fb);
-    urls.unshift(fb);
-  }
-  // ?????/???/??????????????????????????
-  return urls.slice(0, 3);
+function dropOversizedDataUrls(gallery: GalleryImage[]): GalleryImage[] {
+  return gallery
+    .map((g) => {
+      const url = g.url?.trim() ?? "";
+      if (url.startsWith("data:image/") && url.length > MAX_COPY_VISION_DATA_URL_CHARS) {
+        return { ...g, url: "" };
+      }
+      return g;
+    })
+    .filter((g) => !!g.url?.trim());
 }
 
 export const runtime = "nodejs";
@@ -319,10 +274,32 @@ export async function POST(req: Request) {
       );
     }
 
+    const persistMode = resolveImagePersistMode(req, authz.authSource);
+    let visionGallery = dropOversizedDataUrls(galleryImages);
+    if (!persistMode.clientOnly && !persistMode.localDisk) {
+      visionGallery = await mergeCopyGalleryWithTaskImages({
+        userId: authz.user.id,
+        taskId,
+        gallery: visionGallery,
+        fallbackMainUrl: selectedMainImageUrl,
+      });
+    } else {
+      visionGallery = selectGalleryImagesForCopyVision(visionGallery, selectedMainImageUrl);
+    }
+
     const imageUrls = sanitizeStep1ReferenceImageUrls(
-      collectVisionImageUrls(galleryImages, selectedMainImageUrl)
+      collectCopyVisionImageUrls(visionGallery, selectedMainImageUrl)
     );
     const debugImageCount = imageUrls.length;
+    if (!imageUrls.length) {
+      return NextResponse.json(
+        {
+          message:
+            "无法读取产品图（可能图片过大或未上传）。网页版请减少图集体积后重试，或先在 Step2 确认主图已生成。",
+        },
+        { status: 400 }
+      );
+    }
     const template = normalizeTemplate(body.copyTemplate);
     const runtimeCfg = resolveStep4CopyRuntimeConfig();
     const usedModel = runtimeCfg.model;
@@ -397,7 +374,6 @@ export async function POST(req: Request) {
       description,
     };
 
-    const persistMode = resolveImagePersistMode(req, authz.authSource);
     if (!persistMode.clientOnly && !persistMode.localDisk) {
       await prisma.generatedCopywriting.create({
         data: {

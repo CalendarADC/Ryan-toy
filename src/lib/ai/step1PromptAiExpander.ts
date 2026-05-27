@@ -70,15 +70,25 @@ export const STEP1_EXPAND_DEFAULT_VISION_MODEL = "doubao-1-5-vision-pro-32k-2501
 
 export const STEP1_REFERENCE_VISION_MAX_IMAGES = 3;
 const STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT = 45_000;
-const STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX = 90_000;
+/** 深度思考扩写需更长上游等待；网页端 Vercel 函数 maxDuration 已放宽 */
+const STEP1_EXPAND_HTTP_TIMEOUT_MS_DEEP_MIN = 120_000;
+const STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX = 180_000;
 /** Step4 多模态文案：默认更长，可通过 STEP4_COPY_HTTP_TIMEOUT_MS 覆盖 */
 export const STEP4_COPY_HTTP_TIMEOUT_MS_DEFAULT = 120_000;
 export const STEP4_COPY_HTTP_TIMEOUT_MS_MAX = 300_000;
 
-function resolveStep1ExpandHttpTimeoutMs(): number {
+export function resolveStep1ExpandHttpTimeoutMs(): number {
   const raw = Number(process.env.STEP1_EXPAND_HTTP_TIMEOUT_MS ?? "");
   if (!Number.isFinite(raw) || raw <= 0) return STEP1_EXPAND_HTTP_TIMEOUT_MS_DEFAULT;
   return Math.max(8_000, Math.min(STEP1_EXPAND_HTTP_TIMEOUT_MS_MAX, Math.floor(raw)));
+}
+
+export function resolveStep1ExpandHttpTimeoutMsForDepth(depth: Step1ExpandDepth): number {
+  const base = resolveStep1ExpandHttpTimeoutMs();
+  if (depth === "deep") {
+    return Math.max(base, STEP1_EXPAND_HTTP_TIMEOUT_MS_DEEP_MIN);
+  }
+  return base;
 }
 
 export function resolveStep4CopyHttpTimeoutMs(): number {
@@ -682,6 +692,12 @@ export const STEP1_EXPAND_FAILURE_GENERIC_HINT =
 
 export function step1ExpandFailureUserHint(detail: string): string {
   const d = detail.toLowerCase();
+  if (d.includes("413") || d.includes("payload too large") || d.includes("request entity too large")) {
+    return "请求体过大（常见于网页端携带多张未压缩大图）。请减少参考图数量或改用桌面版；Step4 文案请确保只选中必要图片后重试。";
+  }
+  if (d.includes("上游响应超时") || d.includes("aborterror") || d.includes("timeout")) {
+    return "扩写上游响应超时。深度思考模式耗时更长，请稍后重试；网页端可在 Vercel 将 STEP1_EXPAND_HTTP_TIMEOUT_MS 设为 120000 以上。";
+  }
   if (d.includes("1040") || d.includes("too many connections")) {
     return "当前多为上游服务暂时过载（数据库连接数已满等），通常与本地 STEP1_EXPAND_API_KEY 无关，请隔几秒再试；若长期出现需联系接口提供方扩容。";
   }
@@ -1026,6 +1042,7 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     temperature: 0.85,
     maxTokens: enableThinking ? 4096 : 2048,
     enableThinking,
+    httpTimeoutMs: resolveStep1ExpandHttpTimeoutMsForDepth(expandDepth),
     expandKind: args.kind,
     errorLabel: "Step1 AI 改写",
     messages: [

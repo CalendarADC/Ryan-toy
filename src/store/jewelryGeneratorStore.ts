@@ -26,6 +26,7 @@ import {
   mergeTaskWorkspaceWithServer,
   pickLatestMainTimeCluster,
 } from "@/lib/tasks/mergeServerWorkspace";
+import { selectGalleryImagesForCopyVision } from "@/lib/copy/copyVisionGallery";
 import {
   isDesktopLocalClientMode,
   isWebStrictLocalClientMode,
@@ -341,6 +342,40 @@ async function prepareEnhanceInputUrl(url: string): Promise<string> {
   } catch {
     return url;
   }
+}
+
+/** 网页端 Step4：仅传识图所需的少量图，并压缩 data URL，避免 Vercel 413 */
+const COPY_API_TRANSPORT_DATA_URL_MAX_BYTES = 1_100_000;
+
+async function prepareCopyApiImageUrl(url: string | undefined): Promise<string | undefined> {
+  const u = url?.trim();
+  if (!u) return undefined;
+  if (!u.startsWith("data:image/")) return u;
+  try {
+    return await compressDataUrlForEnhanceTransport(u, COPY_API_TRANSPORT_DATA_URL_MAX_BYTES);
+  } catch {
+    return u;
+  }
+}
+
+async function prepareGalleryImagesForCopyApi(
+  images: GalleryImage[],
+  fallbackMainUrl?: string
+): Promise<GalleryImage[]> {
+  const subset = selectGalleryImagesForCopyVision(images, fallbackMainUrl);
+  const out: GalleryImage[] = [];
+  for (const g of subset) {
+    const url = await prepareCopyApiImageUrl(g.url);
+    if (!url) continue;
+    out.push({
+      id: g.id,
+      type: g.type,
+      url,
+      sourceMainImageId: g.sourceMainImageId,
+      debugPromptZh: g.debugPromptZh,
+    });
+  }
+  return out;
 }
 
 const STEP3_ORBIT_VIEW_TYPES = new Set<GalleryImageType>([
@@ -2609,6 +2644,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         });
 
         try {
+          const transportMainUrl = await prepareCopyApiImageUrl(selectedMainImageUrl ?? undefined);
+          const transportGallery = await prepareGalleryImagesForCopyApi(
+            sourceImages,
+            transportMainUrl ?? selectedMainImageUrl ?? undefined
+          );
           const res = await fetchJsonWithTimeout(
             "/api/generate-copy",
             {
@@ -2619,8 +2659,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
                 taskId: activeTaskId,
                 prompt,
                 selectedMainImageId,
-                selectedMainImageUrl: selectedMainImageUrl ?? undefined,
-                galleryImages: sourceImages,
+                selectedMainImageUrl: transportMainUrl ?? undefined,
+                galleryImages: transportGallery,
                 copyTemplate: selectedTemplate,
               }),
             },
@@ -2629,7 +2669,11 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
 
           if (!res.ok) {
             const data = (await res.json().catch(() => null)) as ApiError | null;
-            throw new Error(data?.message || `生成文案失败（HTTP ${res.status}）`);
+            const fallback =
+              res.status === 413
+                ? "生成文案失败：上传的图片数据过大（HTTP 413）。网页版已自动压缩识图用图，请刷新后重试；若仍失败请减少图集张数或使用桌面版。"
+                : `生成文案失败（HTTP ${res.status}）`;
+            throw new Error(data?.message || fallback);
           }
 
           type GenerateCopyResponse = Copywriting & {
