@@ -7,6 +7,7 @@ function mapDbKindToGalleryType(kind: string): GalleryImageType {
   if (
     k === "main" ||
     k === "on_model" ||
+    k === "handheld" ||
     k === "left" ||
     k === "right" ||
     k === "rear" ||

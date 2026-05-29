@@ -115,6 +115,7 @@ function galleryTypeLabel(type: string): string {
   const map: Record<string, string> = {
     main: "主视图",
     on_model: "穿戴图",
+    handheld: "手持视角",
     left: "左侧视图",
     right: "右侧视图",
     rear: "后视图",
@@ -854,10 +855,11 @@ export default function Step3ImageGallery() {
     const order = (t: string) => {
       if (t === "main") return 0;
       if (t === "on_model") return 1;
-      if (t === "front" || t === "top") return 2;
-      if (t === "left" || t === "side") return 3;
-      if (t === "right") return 4;
-      if (t === "rear") return 5;
+      if (t === "handheld") return 2;
+      if (t === "front" || t === "top") return 3;
+      if (t === "left" || t === "side") return 4;
+      if (t === "right") return 5;
+      if (t === "rear") return 6;
       return 9;
     };
     const map = new Map<string, { key: string; images: typeof displayImages }>();

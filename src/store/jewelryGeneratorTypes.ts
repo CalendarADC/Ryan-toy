@@ -21,6 +21,7 @@ export type MainImage = {
 export type GalleryImageType =
   | "main"
   | "on_model"
+  | "handheld"
   | "left"
   | "right"
   | "rear"
@@ -209,6 +210,7 @@ export type JewelryGeneratorStore = {
     wearGender?: Step2WearGender | null;
     /** @deprecated 请使用 wearGender */
     onModel?: boolean;
+    handheld?: boolean;
     left: boolean;
     right: boolean;
     rear: boolean;

@@ -385,7 +385,7 @@ export function buildStep3MultiViewTonePreservationBlock(): string {
 
 /** 强制机位与 init 可区分，避免 img2img 只微调光影却标签为左/右/正视图。 */
 export function buildStep3MandatoryCameraOrbitBlock(
-  shot: "left" | "right" | "rear" | "front",
+  shot: "left" | "right" | "rear" | "front" | "handheld",
   kind?: JewelryProductKind
 ): string {
   const orbitHint =
@@ -393,6 +393,8 @@ export function buildStep3MandatoryCameraOrbitBlock(
       ? "orbit **counterclockwise** toward the piece's physical **LEFT** (~60°–110°)"
       : shot === "right"
         ? "orbit **clockwise** toward the physical **RIGHT** (~60°–110°)"
+        : shot === "handheld"
+          ? "switch to a **human hand-held macro perspective** with fingers actively pinching/holding the jewelry; not a neck-wearing shot and not a static tabletop-only shot"
         : shot === "rear" && kind === "ring"
           ? "orbit to the **true rear / back** of the ring (~120°–180° from the hero face), then **lay the ring flat** so the **rear exterior of the shank** faces the lens — **not** an upright through-hole shot"
           : shot === "rear"
@@ -404,6 +406,20 @@ export function buildStep3MandatoryCameraOrbitBlock(
     "If band ellipse, motif plane, and stone table read **the same** as the init (only polish/glare shifted), you **failed** — increase orbit until asymmetric lateral or rear/front cues dominate.",
     "Preserve SKU, stones, and session tone; **change camera only** — but the camera change must be **obvious**.",
   ].join(" ");
+}
+
+export function buildStep3HandheldShotBlock(kind: JewelryProductKind): string {
+  const kindLine =
+    kind === "pendant"
+      ? "Pendant handheld: hold pendant between fingers (or on fingertips) with clear bail and pendant body visible; chain may be absent or partially present, but jewelry remains the sole hero."
+      : "Ring handheld: hold ring between fingers or let ring rest on fingertips; maintain clear view of ring face and shank profile.";
+  return [
+    "HANDHELD / PLAY-IN-HAND VIEW (strict): generate a realistic macro hand-interaction shot with natural finger skin texture, tiny pressure deformation, and believable depth-of-field.",
+    kindLine,
+    "Composition: jewelry occupies hero area while at least 2 fingers are visible for scale reference; avoid face or full body.",
+    "Realism cues: subtle micro shadows between jewelry and skin, correct contact points, and natural grip force; no floating jewelry detached from fingers.",
+    "FORBID: mannequin hand, plastic toy hand, extra rings/bracelets, unrealistic giant jewelry scale, or a pure tabletop still-life with no hand interaction.",
+  ].join("\n");
 }
 
 /**
@@ -843,6 +859,39 @@ export function buildPendantOnModelScaleAndChainBlock(): string {
     "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck crop, never oversized talisman filling most of the chest area.",
     "Length/read lock: chain behaves like a normal short necklace drop with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
     "FORBID scale failures: giant pendant hero (4–6+ cm visual read), toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
+  ].join("\n");
+}
+
+/**
+ * Step2 吊坠/项链穿戴图：拍摄距离/角度与着装暴露度约束
+ */
+export function buildPendantOnModelFramingAndWardrobeBlock(
+  wearGender?: "male" | "female" | null
+): string {
+  const framing = [
+    "NECKLACE WEARING CAMERA FRAMING (strict):",
+    "Use a slightly pulled-back composition (not ultra-tight macro): show lower neck + collarbone + upper chest context so necklace scale reads naturally in lifestyle/e-commerce style.",
+    "Camera bearing may be true frontal or slight 10°–25° three-quarter side angle; keep pendant clearly readable and centered near chest focal area.",
+    "FORBID overly tight crop where only a tiny neck patch is visible, and forbid extreme side angle that hides pendant face.",
+  ].join("\n");
+  if (wearGender === "female") {
+    return [
+      framing,
+      "WARDROBE (female selected): allow tasteful low-neckline styling for light sensual fashion read; keep it elegant and subtle.",
+      "SAFETY: no nipple exposure, no explicit sexual posing, no fetish framing; jewelry remains product hero.",
+    ].join("\n");
+  }
+  if (wearGender === "male") {
+    return [
+      framing,
+      "WARDROBE (male selected): allow upper-chest / clavicle visibility and mild muscle definition to convey strength.",
+      "SAFETY: no nipple exposure, no explicit sexual posing, no erotic intent; jewelry remains product hero.",
+    ].join("\n");
+  }
+  return [
+    framing,
+    "WARDROBE (auto/unisex): clean neckline with moderate chest context and tasteful styling; avoid conservative turtleneck that hides necklace and avoid explicit exposure.",
+    "SAFETY: no nipple exposure, no explicit sexual posing.",
   ].join("\n");
 }
 

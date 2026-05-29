@@ -16,11 +16,13 @@ import {
   getStep3LeftRightPromptVariant,
 } from "@/lib/ai/enhancePromptBlocks";
 import {
+  buildPendantOnModelFramingAndWardrobeBlock,
   buildPendantOnModelScaleAndChainBlock,
   buildPendantOnModelStyleAdaptiveBlock,
   buildEnhanceSoftLimitSuffix,
   buildPendantRearViewDefaultSolidBackBlock,
   buildRingRearProductViewBlock,
+  buildStep3HandheldShotBlock,
   buildRingWomensOnModelLuxuryPresentationBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
   buildStep3MandatoryCameraOrbitBlock,
@@ -124,6 +126,7 @@ type Body = {
   onModel: boolean;
   /** Step2 穿戴图：用户选择的佩戴者性别 */
   wearGender?: Step2WearGender;
+  handheld?: boolean;
   left: boolean;
   right: boolean;
   rear: boolean;
@@ -259,6 +262,7 @@ export async function POST(req: Request) {
   const wearGender: Step2WearGender | null =
     body.wearGender === "male" || body.wearGender === "female" ? body.wearGender : null;
   const onModel = !!body.onModel || wearGender !== null;
+  const handheld = !!body.handheld;
   const left = !!body.left;
   const right = !!body.right;
   const rear = !!body.rear;
@@ -516,9 +520,9 @@ export async function POST(req: Request) {
               ...(wearGender ? [buildWearGenderPresentationBlock(wearGender, kind)] : []),
               step3PendantBailTopologyLockBlock(true),
               buildPendantOnModelScaleAndChainBlock(),
+              buildPendantOnModelFramingAndWardrobeBlock(wearGender),
               buildPendantOnModelStyleAdaptiveBlock(prompt, wearGender),
               "Generate an on-model shot: necklace/pendant worn naturally (cropped framing, no face focus), studio product photography.",
-              "FRAMING (strict): avoid over-tight local crop; keep enough upper-torso/neck context so the wearing presentation reads as a complete on-model view.",
               "Chain must drape naturally with gravity; chain links distinct and readable ? not a blurry rope.",
               "Keep bail and pendant design identical to input; clean Etsy-friendly background.",
               step3UserTextSecondaryBlock(prompt),
@@ -560,6 +564,74 @@ export async function POST(req: Request) {
         return makeGalleryImage({
           id: persisted.id,
           type: "on_model",
+          url: persisted.url,
+          sourceMainImageId: selectedMainImageId,
+          debugPromptZh,
+        });
+      });
+    }
+
+    if (handheld) {
+      const handheldLines =
+        kind === "ring"
+          ? [
+              `[SHOT_KIND: HANDHELD_MACRO — request ${runNonce}_H] You MUST output a realistic hand-held close-up where human fingers are actively interacting with the jewelry; NOT a tabletop-only still-life and NOT a neck-wearing crop.`,
+              "COLOR / GRADE HARMONY: keep jewelry metal/stone hues consistent with the init reference.",
+              step3InputImageSovereigntyOnModelBlock(),
+              baseKeepInstructionOnModel,
+              buildStep3MandatoryCameraOrbitBlock("handheld", kind),
+              buildStep3HandheldShotBlock(kind),
+              "Generate handheld macro shot: at least two fingers visible as real-world scale reference; jewelry remains the single hero object.",
+              "No face focus, no extra accessories, realistic skin texture and natural contact shadows.",
+              step3UserTextSecondaryBlock(prompt),
+            ]
+          : [
+              `[SHOT_KIND: HANDHELD_MACRO — request ${runNonce}_H] You MUST output a realistic hand-held close-up where fingers hold/play the pendant naturally; NOT a static tabletop-only still-life and NOT mandatory neck-wearing crop.`,
+              "COLOR / GRADE HARMONY: keep pendant metal and stone hues consistent with the init reference.",
+              step3InputImageSovereigntyOnModelBlock(),
+              baseKeepInstructionOnModel,
+              buildStep3MandatoryCameraOrbitBlock("handheld", kind),
+              step3PendantBailTopologyLockBlock(true),
+              buildStep3HandheldShotBlock(kind),
+              "Generate handheld macro pendant shot: fingers interacting with pendant body for true-to-life scale and realism.",
+              "Allow optional partial chain glimpse only if it looks naturally connected to the pendant; no clutter props.",
+              step3UserTextSecondaryBlock(prompt),
+            ];
+      const editPrompt = withEnhanceSoftLimits(
+        prompt,
+        handheldLines.filter(Boolean).join("\n"),
+        true
+      );
+      const debugPromptZh = `手持视角 / Handheld\n用户 prompt：${prompt}\n\n${editPrompt}`;
+      await runOneShot(async () => {
+        const base64 =
+          imageApiVendor === "kie"
+            ? await kieImageToImage({
+                initImageUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                aspectRatio,
+                imageSize,
+                kieApiKey,
+              })
+            : await laoZhangImageToImage({
+                initImageDataUrl: resolvedMainImageUrl,
+                prompt: editPrompt,
+                ...sharedImgArgs,
+              });
+        const persisted = await persistGeneratedImage({
+          userId: authz.user.id,
+          taskId: taskIdForPersist,
+          kind: "handheld",
+          base64,
+          sourceMainImageId: selectedMainImageId,
+          debugPromptZh,
+          keyPrefix: `users/${authz.user.id}/step3/handheld`,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
+        });
+        return makeGalleryImage({
+          id: persisted.id,
+          type: "handheld",
           url: persisted.url,
           sourceMainImageId: selectedMainImageId,
           debugPromptZh,

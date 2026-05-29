@@ -379,6 +379,7 @@ async function prepareGalleryImagesForCopyApi(
 }
 
 const STEP3_ORBIT_VIEW_TYPES = new Set<GalleryImageType>([
+  "handheld",
   "left",
   "right",
   "front",
@@ -403,17 +404,33 @@ function warnStep3DuplicateViewUrls(images: GalleryImage[]): void {
 
 function buildSingleShotPlans(args: {
   onModel: boolean;
+  handheld: boolean;
   left: boolean;
   right: boolean;
   rear: boolean;
   front: boolean;
-}): Array<{ onModel: boolean; left: boolean; right: boolean; rear: boolean; front: boolean }> {
-  const plans: Array<{ onModel: boolean; left: boolean; right: boolean; rear: boolean; front: boolean }> = [];
-  if (args.onModel) plans.push({ onModel: true, left: false, right: false, rear: false, front: false });
-  if (args.left) plans.push({ onModel: false, left: true, right: false, rear: false, front: false });
-  if (args.right) plans.push({ onModel: false, left: false, right: true, rear: false, front: false });
-  if (args.rear) plans.push({ onModel: false, left: false, right: false, rear: true, front: false });
-  if (args.front) plans.push({ onModel: false, left: false, right: false, rear: false, front: true });
+}): Array<{
+  onModel: boolean;
+  handheld: boolean;
+  left: boolean;
+  right: boolean;
+  rear: boolean;
+  front: boolean;
+}> {
+  const plans: Array<{
+    onModel: boolean;
+    handheld: boolean;
+    left: boolean;
+    right: boolean;
+    rear: boolean;
+    front: boolean;
+  }> = [];
+  if (args.onModel) plans.push({ onModel: true, handheld: false, left: false, right: false, rear: false, front: false });
+  if (args.handheld) plans.push({ onModel: false, handheld: true, left: false, right: false, rear: false, front: false });
+  if (args.left) plans.push({ onModel: false, handheld: false, left: true, right: false, rear: false, front: false });
+  if (args.right) plans.push({ onModel: false, handheld: false, left: false, right: true, rear: false, front: false });
+  if (args.rear) plans.push({ onModel: false, handheld: false, left: false, right: false, rear: true, front: false });
+  if (args.front) plans.push({ onModel: false, handheld: false, left: false, right: false, rear: false, front: true });
   return plans;
 }
 
@@ -435,6 +452,7 @@ function computeStep1TimeoutMs(imageCount: number): number {
 
 function computeEnhanceTimeoutMs(args: {
   onModel: boolean;
+  handheld: boolean;
   left: boolean;
   right: boolean;
   rear: boolean;
@@ -442,6 +460,7 @@ function computeEnhanceTimeoutMs(args: {
 }): number {
   const shots =
     (args.onModel ? 1 : 0) +
+    (args.handheld ? 1 : 0) +
     (args.left ? 1 : 0) +
     (args.right ? 1 : 0) +
     (args.rear ? 1 : 0) +
@@ -1924,7 +1943,15 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
         });
       },
 
-      enhanceGalleryImages: async ({ wearGender = null, onModel: onModelLegacy, left, right, rear, front }) => {
+      enhanceGalleryImages: async ({
+        wearGender = null,
+        onModel: onModelLegacy,
+        handheld = false,
+        left,
+        right,
+        rear,
+        front,
+      }) => {
         const wearGenderSelected =
           wearGender === "male" || wearGender === "female" ? wearGender : null;
         const onModel = wearGenderSelected !== null || !!onModelLegacy;
@@ -1956,9 +1983,10 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           set({ error: apiAuth.missingError });
           return false;
         }
-        if (!onModel && !left && !right && !rear && !front) {
+        if (!onModel && !handheld && !left && !right && !rear && !front) {
           set({
-            error: "请至少选择一个生成选项：穿戴图（需先点「穿」选择男/女）/左侧/右侧/后视图/正视图。",
+            error:
+              "请至少选择一个生成选项：穿戴图（需先点「穿」选择男/女）/手持视角/左侧/右侧/后视图/正视图。",
           });
           return false;
         }
@@ -1997,7 +2025,14 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
           // 同时选左右视图时拆成独立请求，避免左右相机位互相污染导致“同侧图”。
           const merged: GalleryImage[] = [];
           for (const item of selectedItems) {
-            const requestPlans = buildSingleShotPlans({ onModel, left, right, rear, front: !!front });
+            const requestPlans = buildSingleShotPlans({
+              onModel,
+              handheld,
+              left,
+              right,
+              rear,
+              front: !!front,
+            });
 
             const itemImages: GalleryImage[] = [];
             for (const plan of requestPlans) {
@@ -2018,6 +2053,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
                   selectedMainImageId: item.id,
                   selectedMainImageUrl,
                   onModel: plan.onModel,
+                  handheld: plan.handheld,
                   wearGender: plan.onModel ? wearGenderSelected ?? undefined : undefined,
                   left: plan.left,
                   right: plan.right,
@@ -2194,6 +2230,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
 
             // 生成逻辑：main 刷新后，若该 set 当时也生成了其他视角，则同步刷新对应视角。
             const onModel = setScopeImages.some((x) => x.type === "on_model");
+            const handheld = setScopeImages.some((x) => x.type === "handheld");
             const left = setScopeImages.some((x) => x.type === "left" || x.type === "side");
             const right = setScopeImages.some((x) => x.type === "right");
             const rear = setScopeImages.some((x) => x.type === "rear");
@@ -2216,8 +2253,8 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
               };
             });
 
-            if (onModel || left || right || rear || front) {
-              const requestPlans = buildSingleShotPlans({ onModel, left, right, rear, front });
+            if (onModel || handheld || left || right || rear || front) {
+              const requestPlans = buildSingleShotPlans({ onModel, handheld, left, right, rear, front });
 
               const regeneratedImages: GalleryImage[] = [];
               for (const plan of requestPlans) {
@@ -2238,6 +2275,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
                     selectedMainImageId: sourceMainImageId,
                     selectedMainImageUrl,
                     onModel: plan.onModel,
+                    handheld: plan.handheld,
                     left: plan.left,
                     right: plan.right,
                     rear: plan.rear,
@@ -2281,13 +2319,21 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
             }
           } else {
             const onModel = targetType === "on_model";
+            const handheld = targetType === "handheld";
             const left = targetType === "left" || targetType === "side";
             const right = targetType === "right";
             const rear = targetType === "rear";
             const front = targetType === "front" || targetType === "top";
             const selectedMainImageUrl = await prepareEnhanceInputUrl(mainInputUrl ?? "");
 
-            const enhanceTimeoutMs = computeEnhanceTimeoutMs({ onModel, left, right, rear, front });
+            const enhanceTimeoutMs = computeEnhanceTimeoutMs({
+              onModel,
+              handheld,
+              left,
+              right,
+              rear,
+              front,
+            });
             const res = await fetchJsonWithTimeout("/api/enhance", {
               method: "POST",
               headers: jsonApiHeaders(apiAuth),
@@ -2303,6 +2349,7 @@ export const useJewelryGeneratorStore = create<JewelryGeneratorStore>()(
                 selectedMainImageId: sourceMainImageId,
                 selectedMainImageUrl,
                 onModel,
+                handheld,
                 left,
                 right,
                 rear,

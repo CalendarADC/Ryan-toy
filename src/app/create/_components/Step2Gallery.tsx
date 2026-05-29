@@ -84,6 +84,7 @@ export default function Step2Gallery() {
   const [right, setRight] = useState(false);
   const [rear, setRear] = useState(false);
   const [front, setFront] = useState(false);
+  const [handheld, setHandheld] = useState(false);
 
   const step3StartedAt = status.step3GenerationStartedAt;
   const [step3TimerTick, setStep3TimerTick] = useState(0);
@@ -192,7 +193,7 @@ export default function Step2Gallery() {
       : 0;
 
   const canStartGalleryEnhance =
-    selectedMainImageIds.length > 0 && (wearGender !== null || left || right || rear || front);
+    selectedMainImageIds.length > 0 && (wearGender !== null || handheld || left || right || rear || front);
 
   return (
     <div className="space-y-6">
@@ -402,6 +403,18 @@ export default function Step2Gallery() {
               >
                 <span className="pointer-events-none select-none text-sm font-semibold leading-none">后</span>
               </button>
+
+              <button
+                type="button"
+                disabled={status.step3Generating}
+                aria-pressed={handheld}
+                aria-label="手持视角"
+                title="手持视角"
+                className={step1CircleBtnClass(handheld, status.step3Generating)}
+                onClick={() => setHandheld((v) => !v)}
+              >
+                <span className="pointer-events-none select-none text-sm font-semibold leading-none">持</span>
+              </button>
             </div>
 
             <div className="relative" ref={step2ModelToolbarRef}>
@@ -523,7 +536,7 @@ export default function Step2Gallery() {
               canStart={canStartGalleryEnhance}
               loading={status.step3Generating}
               onClick={async () => {
-                const ok = await enhanceGalleryImages({ wearGender, left, right, rear, front });
+                const ok = await enhanceGalleryImages({ wearGender, handheld, left, right, rear, front });
                 if (ok) router.push("/create/gallery");
               }}
               ariaLabel="生成展示图组合"

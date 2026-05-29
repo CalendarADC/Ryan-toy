@@ -39,7 +39,17 @@ function parseTime(iso?: string): number {
 
 function kindToGalleryType(kind: string): GalleryImageType | null {
   const k = kind.toLowerCase();
-  const allowed: string[] = ["main", "on_model", "left", "right", "rear", "front", "top", "side"];
+  const allowed: string[] = [
+    "main",
+    "on_model",
+    "handheld",
+    "left",
+    "right",
+    "rear",
+    "front",
+    "top",
+    "side",
+  ];
   if (!allowed.includes(k)) return null;
   return k as GalleryImageType;
 }
