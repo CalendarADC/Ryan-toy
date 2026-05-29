@@ -143,6 +143,80 @@ type Body = {
   imageApiVendor?: "laozhang" | "kie";
 };
 
+type PendantHandheldViewVariant =
+  | "pinch_upright_front"
+  | "fingertip_flatlay"
+  | "edge_profile_hold"
+  | "palm_drape_hold";
+
+function pickPendantHandheldViewVariant(seed: string): PendantHandheldViewVariant {
+  const variants: PendantHandheldViewVariant[] = [
+    "pinch_upright_front",
+    "fingertip_flatlay",
+    "edge_profile_hold",
+    "palm_drape_hold",
+  ];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 33 + seed.charCodeAt(i)) >>> 0;
+  }
+  return variants[hash % variants.length]!;
+}
+
+function resolveHandheldHandGenderPreference(
+  wearGender?: Step2WearGender | null
+): "female" | "male" {
+  if (wearGender === "female") return "female";
+  if (wearGender === "male") return "male";
+  // 默认提高女性手部出现率；如用户显式选男性则不会覆盖。
+  return Math.random() < 0.72 ? "female" : "male";
+}
+
+function buildHandheldHandGenderBlock(preferred: "female" | "male"): string {
+  if (preferred === "female") {
+    return [
+      "HAND MODEL PRIORITY (this render): use a feminine hand read (slender fingers, clean natural manicure, elegant skin texture) while keeping realism.",
+      "No heavy nail art, no chunky rings/bracelets; jewelry piece stays the only hero product.",
+    ].join("\n");
+  }
+  return [
+    "HAND MODEL PRIORITY (this render): use a masculine hand read (slightly broader finger joints, subtle texture) while keeping realism.",
+    "No extra accessories; jewelry piece stays the only hero product.",
+  ].join("\n");
+}
+
+function buildPendantHandheldVariantBlock(
+  variant: PendantHandheldViewVariant,
+  runNonce: string
+): string {
+  if (variant === "pinch_upright_front") {
+    return [
+      `[HANDHELD_VARIANT: A / pinch_upright_front / ${runNonce}]`,
+      "Pose: pinch pendant near the top between thumb and index finger so pendant hangs naturally downward with gravity.",
+      "View cue: front-dominant read of pendant face; keep bail and connector clearly visible.",
+    ].join("\n");
+  }
+  if (variant === "fingertip_flatlay") {
+    return [
+      `[HANDHELD_VARIANT: B / fingertip_flatlay / ${runNonce}]`,
+      "Pose: pendant lies across two to three fingertips with gentle contact support (not tightly pinched).",
+      "View cue: slight top-down handheld angle, showing full silhouette and stone position clearly.",
+    ].join("\n");
+  }
+  if (variant === "edge_profile_hold") {
+    return [
+      `[HANDHELD_VARIANT: C / edge_profile_hold / ${runNonce}]`,
+      "Pose: hold pendant by one side edge between thumb and index finger, leaving most body unobstructed.",
+      "View cue: three-quarter/profile leaning view to expose thickness and side relief, not pure front clone.",
+    ].join("\n");
+  }
+  return [
+    `[HANDHELD_VARIANT: D / palm_drape_hold / ${runNonce}]`,
+    "Pose: pendant drapes onto upper palm / finger base while one finger lightly stabilizes from the side.",
+    "View cue: natural hand-play context with clear pendant body and chain/bail continuity.",
+  ].join("\n");
+}
+
 function makeGalleryImage({
   id,
   type,
@@ -573,6 +647,8 @@ export async function POST(req: Request) {
     }
 
     if (handheld) {
+      const handGender = resolveHandheldHandGenderPreference(wearGender);
+      const pendantHandheldVariant = pickPendantHandheldViewVariant(`${runNonce}_${selectedMainImageId}`);
       const handheldLines =
         kind === "ring"
           ? [
@@ -594,7 +670,10 @@ export async function POST(req: Request) {
               buildStep3MandatoryCameraOrbitBlock("handheld", kind),
               step3PendantBailTopologyLockBlock(true),
               buildStep3HandheldShotBlock(kind),
+              buildHandheldHandGenderBlock(handGender),
+              buildPendantHandheldVariantBlock(pendantHandheldVariant, runNonce),
               "Generate handheld macro pendant shot: fingers interacting with pendant body for true-to-life scale and realism.",
+              "Variant balance policy: A/B/C/D handheld compositions are intentionally rotated with equal chance across requests; do not collapse to one repeated pose.",
               "Allow optional partial chain glimpse only if it looks naturally connected to the pendant; no clutter props.",
               step3UserTextSecondaryBlock(prompt),
             ];
