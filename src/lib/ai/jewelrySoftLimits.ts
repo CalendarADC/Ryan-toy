@@ -854,11 +854,11 @@ function inferPendantOnModelStyleCue(prompt: string): PendantOnModelStyleCue {
 export function buildPendantOnModelScaleAndChainBlock(): string {
   return [
     "PENDANT ON-MODEL SCALE + CHAIN SPEC (strict):",
-    "Treat the pendant body as a real wearable small piece: target physical height around **2.5 cm** (about 24–27 mm including bail if visible).",
+    "Treat the pendant body as a real wearable small piece: target physical height around **2.5 cm** (about 24–27 mm including bail if visible). This is a hard real-world size lock.",
     "Render a **thin silver twisted-rope chain** (fine helix rope texture), not a thick curb/cable chain and not a leather cord.",
-    "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck crop, never oversized talisman filling most of the chest area.",
+    "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck/collarbone composition, never an oversized talisman filling most of the chest area.",
     "Length/read lock: chain behaves like a normal short necklace drop with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
-    "FORBID scale failures: giant pendant hero (4–6+ cm visual read), toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
+    "FORBID scale failures: giant pendant hero (4–6+ cm visual read), zoomed-in framing that makes pendant appear unrealistically huge, toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
   ].join("\n");
 }
 
@@ -870,9 +870,10 @@ export function buildPendantOnModelFramingAndWardrobeBlock(
 ): string {
   const framing = [
     "NECKLACE WEARING CAMERA FRAMING (strict):",
-    "Use a slightly pulled-back composition (not ultra-tight macro): show lower neck + collarbone + upper chest context so necklace scale reads naturally in lifestyle/e-commerce style.",
+    "Use a clearly pulled-back medium close shot (not macro): include full lower neck + both clavicles + upper chest context so pendant scale reads naturally as real wearing.",
     "Camera bearing may be true frontal or slight 10°–25° three-quarter side angle; keep pendant clearly readable and centered near chest focal area.",
-    "FORBID overly tight crop where only a tiny neck patch is visible, and forbid extreme side angle that hides pendant face.",
+    "FORBID tight local crop (only a tiny neck patch / pendant-only close-up), and forbid extreme side angle that hides pendant face.",
+    "Distance lock: maintain enough camera distance that chain path from neck base to pendant is readable on both sides; avoid beauty-macro jewelry close-up language.",
   ].join("\n");
   if (wearGender === "female") {
     return [

@@ -523,7 +523,7 @@ export async function POST(req: Request) {
               buildPendantOnModelScaleAndChainBlock(),
               buildPendantOnModelFramingAndWardrobeBlock(wearGender),
               buildPendantOnModelStyleAdaptiveBlock(prompt, wearGender),
-              "Generate an on-model shot: necklace/pendant worn naturally (cropped framing, no face focus), studio product photography.",
+              "Generate an on-model shot: necklace/pendant worn naturally in a pulled-back medium close framing (full lower neck + both clavicles + upper chest visible, no face focus), studio product photography.",
               "Chain must drape naturally with gravity; chain links distinct and readable ? not a blurry rope.",
               "Keep bail and pendant design identical to input; clean Etsy-friendly background.",
               step3UserTextSecondaryBlock(prompt),
