@@ -1,7 +1,7 @@
 {
   "name": "gemmuse",
-  "version": "2.11.1",
-  "description": "点燃您的奇思妙想！ v2.11.1",
+  "version": "2.11.2",
+  "description": "点燃您的奇思妙想！ v2.11.2",
   "author": "Ryan 丁",
   "private": true,
   "main": "dist-desktop/main.js",
@@ -9,7 +9,7 @@
     "dev": "next dev",
     "prebuild": "node scripts/prisma-generate-for-build.mjs",
     "build": "next build",
-    "postbuild": "node scripts/copy-sharp-native.mjs && node scripts/patch-standalone-chdir.mjs && node scripts/sync-standalone-static.mjs && node scripts/sync-standalone-public.mjs",
+    "postbuild": "node scripts/copy-sharp-native.mjs && node scripts/sync-standalone-prisma.mjs && node scripts/patch-standalone-chdir.mjs && node scripts/sync-standalone-static.mjs && node scripts/sync-standalone-public.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
@@ -69,6 +69,14 @@
       {
         "from": ".next/standalone",
         "to": "next-standalone"
+      },
+      {
+        "from": ".next/standalone/node_modules/.prisma/client",
+        "to": "next-standalone/node_modules/.prisma/client"
+      },
+      {
+        "from": ".next/standalone/.next/node_modules/.prisma/client",
+        "to": "next-standalone/.next/node_modules/.prisma/client"
       }
     ],
     "extraMetadata": {

@@ -811,6 +811,109 @@ export function buildPendantPhysicalBlock(onModel: boolean): string {
   return lines.join("\n");
 }
 
+type PendantOnModelStyleCue =
+  | "gothic_dark"
+  | "vintage_art"
+  | "minimal_modern"
+  | "nature_poetic"
+  | "cyber_future"
+  | "street_unisex";
+
+function inferPendantOnModelStyleCue(prompt: string): PendantOnModelStyleCue {
+  const p = prompt.trim().toLowerCase();
+  if (!p) return "street_unisex";
+  if (/(gothic|暗黑|哥特|黑金|occult|ritual|神秘|符文)/i.test(prompt)) return "gothic_dark";
+  if (/(vintage|antique|复古|做旧|新艺术|art nouveau|装饰艺术|art deco)/i.test(prompt)) {
+    return "vintage_art";
+  }
+  if (/(minimal|极简|clean line|几何|现代|modern)/i.test(prompt)) return "minimal_modern";
+  if (/(nature|botanical|floral|植物|花|月亮|月相|森系)/i.test(prompt)) return "nature_poetic";
+  if (/(cyber|futur|赛博|机甲|数字|科技感)/i.test(prompt)) return "cyber_future";
+  return "street_unisex";
+}
+
+/**
+ * Step2 吊坠/项链穿戴图：固定比例与链条规格约束（用户给定标尺）
+ */
+export function buildPendantOnModelScaleAndChainBlock(): string {
+  return [
+    "PENDANT ON-MODEL SCALE + CHAIN SPEC (strict):",
+    "Treat the pendant body as a real wearable small piece: target physical height around **2.5 cm** (about 24–27 mm including bail if visible).",
+    "Render a **thin silver twisted-rope chain** (fine helix rope texture), not a thick curb/cable chain and not a leather cord.",
+    "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck crop, never oversized talisman filling most of the chest area.",
+    "Length/read lock: chain behaves like a normal short necklace drop with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
+    "FORBID scale failures: giant pendant hero (4–6+ cm visual read), toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
+  ].join("\n");
+}
+
+/**
+ * Step2 吊坠/项链穿戴图：按首饰风格自动匹配模特气质
+ */
+export function buildPendantOnModelStyleAdaptiveBlock(
+  prompt: string,
+  wearGender?: "male" | "female" | null
+): string {
+  const cue = inferPendantOnModelStyleCue(prompt);
+  const common =
+    "MODEL STYLING (adaptive): keep face de-emphasized; prioritize neck/collarbone/chest crop and jewelry readability. Outfit must support pendant style, never overpower it.";
+  const genderLine = (wearGender?: "male" | "female" | null): string => {
+    if (wearGender === "male") {
+      return "Gender fit (male selected): use a masculine neck/shoulder styling read (wardrobe and posture), avoid feminine-heavy makeup/accessory language.";
+    }
+    if (wearGender === "female") {
+      return "Gender fit (female selected): use a feminine neck/shoulder styling read (wardrobe and posture), keep elegance and product clarity.";
+    }
+    return "Gender fit (auto/unisex): keep styling neutral-commercial and broadly wearable.";
+  };
+  if (cue === "gothic_dark") {
+    return [
+      common,
+      genderLine(wearGender),
+      "Style cue = gothic_dark: choose an edgy model vibe (cool expression, darker wardrobe such as charcoal/black, subtle dramatic contrast), while keeping skin and jewelry realistic.",
+      "Tattoo allowance (occasional, sparse): optionally include at most one small subtle tattoo element near neck/collarbone/wrist area; never dense sleeves or large high-contrast tattoo blocks.",
+      "Avoid heavy props/makeup blocking pendant visibility; keep visual mood dark-clean, not horror cosplay.",
+    ].join("\n");
+  }
+  if (cue === "vintage_art") {
+    return [
+      common,
+      genderLine(wearGender),
+      "Style cue = vintage_art: choose elegant retro model styling (soft classic wardrobe texture, refined posture, calm premium mood).",
+      "Keep palette restrained and warm-neutral so silver pendant detail remains clear.",
+    ].join("\n");
+  }
+  if (cue === "minimal_modern") {
+    return [
+      common,
+      genderLine(wearGender),
+      "Style cue = minimal_modern: choose clean modern model styling (simple monochrome top, minimal accessories, crisp lighting).",
+      "No busy patterns near neckline; keep commercial editorial cleanliness.",
+    ].join("\n");
+  }
+  if (cue === "nature_poetic") {
+    return [
+      common,
+      genderLine(wearGender),
+      "Style cue = nature_poetic: choose gentle natural model styling (soft fabric, natural posture, light airy mood) while preserving product sharpness.",
+      "Avoid bohemian over-layering that hides chain/pendant proportions.",
+    ].join("\n");
+  }
+  if (cue === "cyber_future") {
+    return [
+      common,
+      genderLine(wearGender),
+      "Style cue = cyber_future: choose futuristic model styling (sleek silhouette, controlled cool-toned lighting accents, modern technical wardrobe hints).",
+      "Keep composition product-led: no heavy sci-fi scene clutter.",
+    ].join("\n");
+  }
+  return [
+    common,
+    genderLine(wearGender),
+    "Style cue = street_unisex: choose neutral contemporary model styling suitable for broad unisex market (clean tee/knit, natural pose, balanced contrast).",
+    "Keep pendant as hero; avoid loud brand prints and distracting accessories.",
+  ].join("\n");
+}
+
 export function buildMaterialLightingBlock(
   promptLower: string,
   isSterling925: boolean,

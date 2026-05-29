@@ -271,240 +271,6 @@ export default function Step2Gallery() {
         </div>
       ) : null}
 
-      {displayedImages.length ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {displayedImages.map((img) => {
-            const selected = selectedMainImageIds.includes(img.id);
-            const isInCurrent = mainImages.some((x) => x.id === img.id);
-            const canFavorite = mainHistoryImages.some((x) => x.id === img.id) || !isInCurrent;
-
-            return (
-              <WindowedMount
-                key={img.id}
-                estimatedHeight={285}
-                enabled={viewMode !== "current"}
-              >
-                <div
-                  data-main-card="1"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    const items = displayedImages.map((x) => ({
-                      url: x.url,
-                      alt: "主视图",
-                    }));
-                    const idx = displayedImages.findIndex((x) => x.id === img.id);
-                    setPreviewItems(items);
-                    setPreviewIndex(idx >= 0 ? idx : 0);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      const items = displayedImages.map((x) => ({
-                        url: x.url,
-                        alt: "主视图",
-                      }));
-                      const idx = displayedImages.findIndex((x) => x.id === img.id);
-                      setPreviewItems(items);
-                      setPreviewIndex(idx >= 0 ? idx : 0);
-                    }
-                  }}
-                  className={[
-                    "relative overflow-hidden rounded-2xl border bg-[var(--create-surface-paper)] text-left shadow-[0_1px_8px_rgba(45,55,72,0.06)]",
-                    selected
-                      ? "border-[#C5A059]"
-                      : "border-[rgba(94,111,130,0.18)] hover:border-[rgba(199,178,153,0.55)]",
-                  ].join(" ")}
-                >
-                  <div className="aspect-square bg-[color-mix(in_srgb,var(--create-surface-tray)_42%,var(--create-surface-paper))]">
-                    <img
-                      src={img.url}
-                      alt="主视图"
-                      draggable={false}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-
-                {/* 左上角：选中指示圆圈（只点击圆圈才表示选中） */}
-                <button
-                  type="button"
-                  aria-label={selected ? "取消选中主视图" : "选中主视图"}
-                  aria-pressed={selected}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleMainImageSelection(img.id);
-                  }}
-                  className={[
-                    "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur",
-                    selected ? "border-blue-600 bg-blue-600" : "border-gray-300 bg-white/90",
-                  ].join(" ")}
-                >
-                  {selected ? (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M20 6L9 17L4 12"
-                        stroke="white"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : null}
-                </button>
-
-                {/* 左下角：下载箭头（不触发预览） */}
-                <button
-                  type="button"
-                  aria-label="查看该图片对应的提示词"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const text = img.debugPromptZh
-                      ? img.debugPromptZh
-                      : "该图片没有保存对应的提示词信息。请重新生成主视图（Step 1），然后再查看。";
-                    setPromptModalText(text);
-                    setShowPromptModal(true);
-                  }}
-                  className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 ring-1 ring-gray-200 hover:bg-white backdrop-blur"
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  aria-label="下载主视图"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try {
-                      await downloadImage(img.url, `main_${img.id}.${getDataUrlExt(img.url)}`);
-                    } catch {
-                      emitToast({ message: "下载失败：图片地址不可访问或跨域受限。", type: "error" });
-                    }
-                  }}
-                  className="absolute left-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 3v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-
-                {/* 左下角旁：专用拖拽导出按钮（避免整卡拖拽导致浏览器残留态） */}
-                <button
-                  type="button"
-                  aria-label="复制图片到剪贴板"
-                  title="复制图片到剪贴板"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const outcome = await copyImageToClipboard(img.url);
-                    const toast = toastForCopyImageOutcome(outcome);
-                    if (outcome.ok) {
-                      setCopiedId(img.id);
-                      window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
-                    }
-                    emitToast({ ...toast, durationMs: outcome.ok ? undefined : 2200 });
-                  }}
-                  className={[
-                    "absolute left-12 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full ring-1 backdrop-blur",
-                    copiedId === img.id
-                      ? "bg-green-600 text-white ring-green-600"
-                      : "bg-white/90 text-gray-700 ring-gray-200 hover:bg-white",
-                  ].join(" ")}
-                >
-                  {copiedId === img.id ? (
-                    <span className="text-xs font-bold">✓</span>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
-                      <path d="M5 15V7a2 2 0 0 1 2-2h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  )}
-                </button>
-
-                {/* 右下角：历史/最爱模式下显示收藏星标；当前模式显示重试 */}
-                {viewMode !== "current" && canFavorite ? (
-                  <button
-                    type="button"
-                    aria-label={img.isFavorite ? "取消收藏" : "收藏"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMainHistoryFavorite(img.id);
-                    }}
-                    className={[
-                      "absolute right-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full ring-1 backdrop-blur",
-                      img.isFavorite
-                        ? "border-amber-300 bg-amber-50 text-amber-800 ring-amber-300/70"
-                        : "bg-white/90 text-[#5E6F82] ring-[#5E6F82]/30 hover:bg-white",
-                    ].join(" ")}
-                  >
-                    ★
-                  </button>
-                ) : null}
-
-                {viewMode === "current" && isInCurrent ? (
-                  <button
-                    type="button"
-                    aria-label="重试这张主图"
-                    disabled={status.step1Generating || refreshingId === img.id}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setRefreshingId(img.id);
-                      try {
-                        await regenerateMainImage(img.id);
-                      } finally {
-                        setRefreshingId(null);
-                      }
-                    }}
-                    className="absolute right-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-[#5E6F82] ring-1 ring-[#5E6F82]/30 hover:bg-white backdrop-blur disabled:opacity-50"
-                  >
-                    <span
-                      className={
-                        refreshingId === img.id
-                          ? "inline-block animate-spin"
-                          : "inline-block"
-                      }
-                    >
-                      ↻
-                    </span>
-                  </button>
-                ) : null}
-                </div>
-              </WindowedMount>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed border-[rgba(94,111,130,0.22)] bg-[color-mix(in_srgb,var(--create-surface-paper)_70%,var(--create-surface-tray))] p-6 text-sm text-gray-600">
-          {viewMode === "favorites"
-            ? "暂无收藏主视图。可在历史记录中点击右下角星标收藏。"
-            : "还没有生成主视图。请先完成 Step 1。"}
-        </div>
-      )}
       {status.step1Generating ? (
         <div className="text-xs text-gray-500">正在生成中...</div>
       ) : null}
@@ -774,6 +540,241 @@ export default function Step2Gallery() {
 
         {error ? <div className="text-sm text-red-600">{error}</div> : null}
       </div>
+
+      {displayedImages.length ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {displayedImages.map((img) => {
+            const selected = selectedMainImageIds.includes(img.id);
+            const isInCurrent = mainImages.some((x) => x.id === img.id);
+            const canFavorite = mainHistoryImages.some((x) => x.id === img.id) || !isInCurrent;
+
+            return (
+              <WindowedMount
+                key={img.id}
+                estimatedHeight={285}
+                enabled={viewMode !== "current"}
+              >
+                <div
+                  data-main-card="1"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    const items = displayedImages.map((x) => ({
+                      url: x.url,
+                      alt: "主视图",
+                    }));
+                    const idx = displayedImages.findIndex((x) => x.id === img.id);
+                    setPreviewItems(items);
+                    setPreviewIndex(idx >= 0 ? idx : 0);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      const items = displayedImages.map((x) => ({
+                        url: x.url,
+                        alt: "主视图",
+                      }));
+                      const idx = displayedImages.findIndex((x) => x.id === img.id);
+                      setPreviewItems(items);
+                      setPreviewIndex(idx >= 0 ? idx : 0);
+                    }
+                  }}
+                  className={[
+                    "relative overflow-hidden rounded-2xl border bg-[var(--create-surface-paper)] text-left shadow-[0_1px_8px_rgba(45,55,72,0.06)]",
+                    selected
+                      ? "border-[#C5A059]"
+                      : "border-[rgba(94,111,130,0.18)] hover:border-[rgba(199,178,153,0.55)]",
+                  ].join(" ")}
+                >
+                  <div className="aspect-square bg-[color-mix(in_srgb,var(--create-surface-tray)_42%,var(--create-surface-paper))]">
+                    <img
+                      src={img.url}
+                      alt="主视图"
+                      draggable={false}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+
+                {/* 左上角：选中指示圆圈（只点击圆圈才表示选中） */}
+                <button
+                  type="button"
+                  aria-label={selected ? "取消选中主视图" : "选中主视图"}
+                  aria-pressed={selected}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMainImageSelection(img.id);
+                  }}
+                  className={[
+                    "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur",
+                    selected ? "border-blue-600 bg-blue-600" : "border-gray-300 bg-white/90",
+                  ].join(" ")}
+                >
+                  {selected ? (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M20 6L9 17L4 12"
+                        stroke="white"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : null}
+                </button>
+
+                {/* 左下角：下载箭头（不触发预览） */}
+                <button
+                  type="button"
+                  aria-label="查看该图片对应的提示词"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const text = img.debugPromptZh
+                      ? img.debugPromptZh
+                      : "该图片没有保存对应的提示词信息。请重新生成主视图（Step 1），然后再查看。";
+                    setPromptModalText(text);
+                    setShowPromptModal(true);
+                  }}
+                  className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 ring-1 ring-gray-200 hover:bg-white backdrop-blur"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="下载主视图"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await downloadImage(img.url, `main_${img.id}.${getDataUrlExt(img.url)}`);
+                    } catch {
+                      emitToast({ message: "下载失败：图片地址不可访问或跨域受限。", type: "error" });
+                    }
+                  }}
+                  className="absolute left-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 3v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {/* 左下角旁：专用拖拽导出按钮（避免整卡拖拽导致浏览器残留态） */}
+                <button
+                  type="button"
+                  aria-label="复制图片到剪贴板"
+                  title="复制图片到剪贴板"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const outcome = await copyImageToClipboard(img.url);
+                    const toast = toastForCopyImageOutcome(outcome);
+                    if (outcome.ok) {
+                      setCopiedId(img.id);
+                      window.setTimeout(() => setCopiedId((id) => (id === img.id ? null : id)), 1200);
+                    }
+                    emitToast({ ...toast, durationMs: outcome.ok ? undefined : 2200 });
+                  }}
+                  className={[
+                    "absolute left-12 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full ring-1 backdrop-blur",
+                    copiedId === img.id
+                      ? "bg-green-600 text-white ring-green-600"
+                      : "bg-white/90 text-gray-700 ring-gray-200 hover:bg-white",
+                  ].join(" ")}
+                >
+                  {copiedId === img.id ? (
+                    <span className="text-xs font-bold">✓</span>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
+                      <path d="M5 15V7a2 2 0 0 1 2-2h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* 右下角：历史/最爱模式下显示收藏星标；当前模式显示重试 */}
+                {viewMode !== "current" && canFavorite ? (
+                  <button
+                    type="button"
+                    aria-label={img.isFavorite ? "取消收藏" : "收藏"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMainHistoryFavorite(img.id);
+                    }}
+                    className={[
+                      "absolute right-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full ring-1 backdrop-blur",
+                      img.isFavorite
+                        ? "border-amber-300 bg-amber-50 text-amber-800 ring-amber-300/70"
+                        : "bg-white/90 text-[#5E6F82] ring-[#5E6F82]/30 hover:bg-white",
+                    ].join(" ")}
+                  >
+                    ★
+                  </button>
+                ) : null}
+
+                {viewMode === "current" && isInCurrent ? (
+                  <button
+                    type="button"
+                    aria-label="重试这张主图"
+                    disabled={status.step1Generating || refreshingId === img.id}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setRefreshingId(img.id);
+                      try {
+                        await regenerateMainImage(img.id);
+                      } finally {
+                        setRefreshingId(null);
+                      }
+                    }}
+                    className="absolute right-2 bottom-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-[#5E6F82] ring-1 ring-[#5E6F82]/30 hover:bg-white backdrop-blur disabled:opacity-50"
+                  >
+                    <span
+                      className={
+                        refreshingId === img.id
+                          ? "inline-block animate-spin"
+                          : "inline-block"
+                      }
+                    >
+                      ↻
+                    </span>
+                  </button>
+                ) : null}
+                </div>
+              </WindowedMount>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-[rgba(94,111,130,0.22)] bg-[color-mix(in_srgb,var(--create-surface-paper)_70%,var(--create-surface-tray))] p-6 text-sm text-gray-600">
+          {viewMode === "favorites"
+            ? "暂无收藏主视图。可在历史记录中点击右下角星标收藏。"
+            : "还没有生成主视图。请先完成 Step 1。"}
+        </div>
+      )}
       </div>
 
       {showPromptModal ? (

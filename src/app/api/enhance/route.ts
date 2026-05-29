@@ -16,6 +16,8 @@ import {
   getStep3LeftRightPromptVariant,
 } from "@/lib/ai/enhancePromptBlocks";
 import {
+  buildPendantOnModelScaleAndChainBlock,
+  buildPendantOnModelStyleAdaptiveBlock,
   buildEnhanceSoftLimitSuffix,
   buildPendantRearViewDefaultSolidBackBlock,
   buildRingRearProductViewBlock,
@@ -513,6 +515,8 @@ export async function POST(req: Request) {
               baseKeepInstructionOnModel,
               ...(wearGender ? [buildWearGenderPresentationBlock(wearGender, kind)] : []),
               step3PendantBailTopologyLockBlock(true),
+              buildPendantOnModelScaleAndChainBlock(),
+              buildPendantOnModelStyleAdaptiveBlock(prompt, wearGender),
               "Generate an on-model shot: necklace/pendant worn naturally (cropped framing, no face focus), studio product photography.",
               "FRAMING (strict): avoid over-tight local crop; keep enough upper-torso/neck context so the wearing presentation reads as a complete on-model view.",
               "Chain must drape naturally with gravity; chain links distinct and readable ? not a blurry rope.",
