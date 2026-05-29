@@ -49,6 +49,7 @@ import { uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function withEnhanceSoftLimits(
   prompt: string,

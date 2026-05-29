@@ -902,7 +902,8 @@ export async function laoZhangImageToImage(args: {
 const KIE_BASE_URL = "https://api.kie.ai/api/v1";
 const KIE_MODEL = "nano-banana-pro";
 const KIE_POLL_INTERVAL_MS = 2200;
-const KIE_POLL_TIMEOUT_MS = 180_000;
+const KIE_POLL_TIMEOUT_MS = 270_000;
+const KIE_PROMPT_MAX_BYTES = 9_500;
 
 type KieCreateTaskResponse = {
   code?: number;
@@ -949,6 +950,31 @@ function toKieResolution(v: ImageSize): "1K" | "2K" | "4K" {
   return "1K";
 }
 
+function utf8ByteLength(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
+
+function truncateUtf8ByBytes(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return "";
+  const buf = Buffer.from(text, "utf8");
+  if (buf.byteLength <= maxBytes) return text;
+  return buf.subarray(0, maxBytes).toString("utf8").replace(/\uFFFD+$/g, "").trimEnd();
+}
+
+function compactPromptForKie(prompt: string): string {
+  const normalized = prompt
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (utf8ByteLength(normalized) <= KIE_PROMPT_MAX_BYTES) return normalized;
+
+  // Kie 对 prompt 长度比较敏感：超限时优先保留主干语义，尾部硬截断以避免整体失败。
+  return truncateUtf8ByBytes(normalized, KIE_PROMPT_MAX_BYTES);
+}
+
 async function createKieTask(args: {
   prompt: string;
   aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
@@ -957,11 +983,12 @@ async function createKieTask(args: {
   kieApiKey?: string;
 }): Promise<string> {
   const apiKey = requireKieApiKey(args.kieApiKey);
+  const prompt = compactPromptForKie(args.prompt);
   const payload = {
     model: KIE_MODEL,
     callBackUrl: "",
     input: {
-      prompt: args.prompt,
+      prompt,
       image_input: assertPublicImageUrls(args.imageInputUrls ?? []),
       aspect_ratio: args.aspectRatio,
       output_format: "png",

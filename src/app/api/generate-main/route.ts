@@ -54,6 +54,7 @@ import { buildCappyCalmCharacterLockBlock } from "@/lib/ip/cappyCalm";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type Body = {
   taskId?: string;

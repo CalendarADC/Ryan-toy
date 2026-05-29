@@ -341,6 +341,7 @@ export default function Step1Input() {
     addStep1ReferenceImage,
     removeStep1ReferenceImageAt,
     clearStep1ReferenceImages,
+    recoverStep1FromServerIfComplete,
   } = useJewelryGeneratorStore();
   const isGenerating = status.step1Generating;
   const hasStep1References = step1ReferenceImageDataUrls.length > 0;
@@ -634,6 +635,27 @@ export default function Step1Input() {
     }
     return "检测到 Cappy Calm：请在文案中写明「925银 / sterling / 纯银」或「镀金 / gold plated」等，即可自动附加对应官方参考图。";
   }, [prompt]);
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await recoverStep1FromServerIfComplete();
+      } catch {
+        /* ignore recover failures; normal request flow stays primary */
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, 6000);
+      }
+    };
+    timer = setTimeout(tick, 6000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isGenerating, recoverStep1FromServerIfComplete]);
 
   useEffect(() => {
     if (!toolbarMenuOpen) return;
