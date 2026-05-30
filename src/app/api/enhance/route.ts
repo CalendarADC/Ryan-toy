@@ -22,6 +22,7 @@ import {
   buildEnhanceSoftLimitSuffix,
   buildPendantRearViewDefaultSolidBackBlock,
   buildRingRearProductViewBlock,
+  buildRingStep3LyingPlacementBlock,
   buildStep3HandheldShotBlock,
   buildRingWomensOnModelLuxuryPresentationBlock,
   buildSingleJewelryPieceOnlyConstraintBlock,
@@ -556,6 +557,14 @@ export async function POST(req: Request) {
         : "";
 
     const ringRearViewFullBlock = kind === "ring" ? buildRingRearProductViewBlock() : "";
+    const ringFrontLyingPlacementBlock =
+      kind === "ring" ? buildRingStep3LyingPlacementBlock("front") : "";
+    const ringLeftLyingPlacementBlock =
+      kind === "ring" ? buildRingStep3LyingPlacementBlock("left") : "";
+    const ringRightLyingPlacementBlock =
+      kind === "ring" ? buildRingStep3LyingPlacementBlock("right") : "";
+    const ringRearLyingPlacementBlock =
+      kind === "ring" ? buildRingStep3LyingPlacementBlock("rear") : "";
 
     /** 同一张 init 并发多路 img2img 时，部分上游易出现近似重复输出；顺序执行 + 明确 SHOT_KIND 降低串视角风险。 */
     const runOneShot = async (shot: () => Promise<GalleryImage>) => {
@@ -733,6 +742,7 @@ export async function POST(req: Request) {
           pendantBailLock,
           pendantLateralViewForSide("left"),
           ringLeftRightViewFullBlock,
+          ringLeftLyingPlacementBlock,
           "LEFT VIEW ? CAMERA ORBIT (strict): From the init **front hero**, orbit the camera **counterclockwise** around a **vertical axis through the jewelry** (top view): move ~**60?110?* toward the piece?s **left flank**. The **main relief / face / stones** must remain **visible in profile or three-quarter** ? this is **NOT** a ~180?rotation to the **flat reverse / back plate**, and **NOT** a **concave hollow-mold / negative impression** of the face (that is invalid).",
           "LEFT JOB ? ASYMMETRY (strict): vs. the init hero, the frame must favor **more visible metal/shank and setting on the camera-left** and **clearer foreshortening toward camera-right** (counterclockwise orbit read ? not a symmetric frontal).",
           "Generate a LEFT-side product view: camera moved to the **LEFT** of the set (around ~60?110?from the old front axis), macro studio shot ? NOT the same straight-on front as the input.",
@@ -798,6 +808,7 @@ export async function POST(req: Request) {
           pendantBailLock,
           pendantLateralViewForSide("right"),
           ringLeftRightViewFullBlock,
+          ringRightLyingPlacementBlock,
           "RIGHT VIEW ? CAMERA ORBIT (strict): From the init **front hero**, orbit **clockwise** around the **vertical axis** ~**60?110?* toward the piece?s **right flank**. **Relief / motif must stay visible** in profile or 3/4 ? **NOT** the undecorated back surface facing the lens, and **NOT** a **concave hollow-mold / negative impression** of the face.",
           "RIGHT JOB ? ASYMMETRY (strict): vs. the init hero, the frame must favor **more visible metal/shank and setting on the camera-right** and **clearer foreshortening toward camera-left** (clockwise orbit read ? not a symmetric frontal).",
           "Generate a RIGHT-side product view: camera moved to the **RIGHT** of the set (around ~60?110?from the old front axis), macro studio shot ? NOT the same straight-on front as the input.",
@@ -867,6 +878,7 @@ export async function POST(req: Request) {
           gemHueLockBlock,
           pendantBailLock,
           ringRearViewFullBlock,
+          ringRearLyingPlacementBlock,
           "Generate a REAR / BACK view of the jewelry: show the back of the setting, rear of bail (for pendants), clasp back, or inner/back surfaces as appropriate?still as a clean studio product shot.",
           kind === "pendant"
             ? "PENDANT REAR PRIORITY: treat this as **industrial geometry completion** — the reverse must read as a **designed CAD back** with depth, not a blank polished slab."
@@ -937,6 +949,7 @@ export async function POST(req: Request) {
           "Keep the jewelry exactly identical to the input image; only adjust camera to a clear frontal angle.",
           strictFrontViewInstruction,
           ringFrontFiguralFacingLens,
+          ringFrontLyingPlacementBlock,
           pendantFrontMotifFacingLens,
           keepMainBackgroundInstruction,
           "Realistic reflections, no extra jewelry, no hands unless on-model was requested separately.",

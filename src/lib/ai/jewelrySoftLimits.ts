@@ -423,18 +423,58 @@ export function buildStep3HandheldShotBlock(kind: JewelryProductKind): string {
 }
 
 /**
+ * Step3 戒指四视图统一摆放定义：
+ * - 必须“躺放”在展示环境中（非手持）
+ * - 戒指中孔所在平面需垂直于台面（即中孔不是朝上平放）
+ */
+export function buildRingStep3LyingPlacementBlock(
+  shot: "front" | "left" | "right" | "rear"
+): string {
+  const shared = [
+    "RING PLACEMENT BASELINE (strict, applies to front/left/right/rear): place the ring lying/resting on the display surface in a stable product pose.",
+    "Lying definition lock: the ring-hole insertion plane must be **perpendicular to the tabletop** (vertical plane), not parallel to the tabletop.",
+    "FORBID: flat face-up donut placement (hole plane parallel to table), upright balancing stand tricks, levitating ring, hand-held ring, or mannequin hand.",
+    "Keep realistic contact with surface and believable contact shadows; no floating geometry.",
+  ].join("\n");
+  if (shot === "front") {
+    return [
+      shared,
+      "FRONT ORIENTATION: theme/head/main motif faces the lens squarely while staying in the same lying placement family.",
+      "Do not rotate into side-profile for front view.",
+    ].join("\n");
+  }
+  if (shot === "left") {
+    return [
+      shared,
+      "LEFT ORIENTATION (theme-led): classify left view by motif facing direction — the main theme/head should point toward **screen-left**.",
+      "This is not a mirrored right view; preserve lying placement while rotating to the left-bearing variant.",
+    ].join("\n");
+  }
+  if (shot === "right") {
+    return [
+      shared,
+      "RIGHT ORIENTATION (theme-led): classify right view by motif facing direction — the main theme/head should point toward **screen-right**.",
+      "This is not a mirrored left view; preserve lying placement while rotating to the right-bearing variant.",
+    ].join("\n");
+  }
+  return [
+    shared,
+    "REAR ORIENTATION: show the back of theme/head and rear structure while keeping the same lying placement definition.",
+    "Rear should not fall back to front or side hero composition.",
+  ].join("\n");
+}
+
+/**
  * Step3 戒指后视图（方案 A）：放倒 + 戒圈背面/屁股朝镜头，对齐老张测试站图1。
  * 禁止图2式「立起来、镜头正对戒圈内孔」的穿心视角。
  */
 export function buildRingRearProductViewBlock(): string {
   return [
-    "RING — REAR / BACK PRODUCT VIEW (strict — catalog flat-lay rear, NOT through-hole hero):",
-    "POSE (mandatory): Lay the ring **flat on the display surface** on its side — band axis roughly **horizontal**, weight on the table with believable contact shadow. **FORBID** balancing the ring **upright on the band edge** so the finger hole faces the lens like a donut (wrong pattern).",
-    "CAMERA (mandatory): Lens sights the **exterior rear / back wall of the shank** (band back / underside rear) **toward the viewer** — camera normal roughly aligned to that rear metal plane (within ~±10° yaw). Slight low product angle is OK.",
-    "HERO READ: The **rear shank exterior** dominates — closed back of gallery, hallmarks, sizing bar, spring seats, under-gallery struts, backs of prongs as appropriate. The decorative top may be partly occluded or seen from behind.",
-    "FINGER HOLE: May read as a **horizontal ellipse** at one side of frame from this rear bearing — **NOT** a near-perfect centered circle filling the composition (that indicates wrong upright through-hole framing).",
-    "FORBID WRONG REAR (图2-class failure): ring **standing on edge** with camera **looking straight through the finger opening**; symmetric circular hole centered like a tunnel; only thin shank rim around a round hole; top motif / stone table still squarely facing the lens like the init hero.",
-    "FORBID: second front hero, top-down plan view of the motif, or side-only band thickness without rear metal readable.",
+    "RING — REAR / BACK PRODUCT VIEW (strict):",
+    "Placement: keep the ring in the same lying placement family — resting on the surface with ring-hole plane perpendicular to the tabletop.",
+    "Rear target: camera reads back-of-theme + rear shank structure as the dominant information.",
+    "Allow visible inner hole as part of lying rear composition, but rear topology must dominate over front hero features.",
+    "FORBID: front-face fallback, left/right side-only fallback, top-down flat donut placement, levitating or hand-held pose.",
     "Keep identical design and stone count; reveal legitimate rear geometry only.",
   ].join("\n");
 }
