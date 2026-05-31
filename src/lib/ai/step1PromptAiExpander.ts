@@ -34,6 +34,11 @@ type ExpandArgs = {
   expandDepth?: Step1ExpandDepth;
 };
 
+type StructuralAestheticsArgs = {
+  prompt: string;
+  kind: JewelryProductKind;
+};
+
 const STEP1_SINGLE_ELEMENT_ONLY_RE =
   /(?:仅仅?|只要|仅需|只需|仅用|只用|单独|唯一|纯粹|仅保留|只保留).{0,24}(?:以)?[^，。；\n]{1,20}(?:为)?(?:设计)?(?:主题|元素|图案|纹样)|(?:不要|不加|无需|不需要).{0,16}(?:其他|额外|第二|第二个).{0,6}(?:元素|主题|图案|纹样)|(?:仅|只)(?:一个|单一).{0,6}(?:元素|主题)/i;
 const STEP1_MULTI_ELEMENT_RE =
@@ -59,6 +64,44 @@ export function resolveCompanionElementPolicy(userPrompt: string): CompanionElem
   if (userPromptForcesSingleElementOnly(userPrompt)) return "forbid_add";
   if (userPromptIndicatesMultiDesignElements(userPrompt)) return "no_auto_add";
   return "auto_add_one";
+}
+
+const GEM_RICH_REQUEST_RE =
+  /满镶|密镶|微镶|排镶|满天星|pav[ée]|micro.?pav|halo|cluster|multi[-\s]?stone|多颗|很多颗|一圈小石|群镶/i;
+
+const ORNATE_TEXTURE_REQUEST_RE =
+  /巴洛克|洛可可|繁复|重纹|重雕|满版纹|密纹|浮雕满|vintage ornamental|highly ornate/i;
+
+export function userPromptPrefersGemRichOrnateDirection(userPrompt: string): boolean {
+  return GEM_RICH_REQUEST_RE.test(userPrompt) || ORNATE_TEXTURE_REQUEST_RE.test(userPrompt);
+}
+
+/**
+ * 结构优先审美块：
+ * - 先空间架构，再风格语气；
+ * - 默认克制宝石与纹饰密度，强调负空间与体块关系；
+ * - 目标是得到“有个性但不标签化”的高级感结构。
+ */
+export function buildStep1ExpandStructuralAestheticsBlock(args: StructuralAestheticsArgs): string {
+  const gemDensityLine = userPromptPrefersGemRichOrnateDirection(args.prompt)
+    ? `宝石与装饰密度：用户已明确要求偏丰富，可保留，但仍需维持结构可读与主次秩序；总宝石数不可超过 ${STEP1_EXPAND_MAX_GEM_COUNT}。`
+    : "宝石与装饰密度：默认克制，优先单主石或少量点缀（建议主石 1 颗 + 配石 0-2 颗），避免以碎石和花纹堆满表面。";
+  const morphologyLine =
+    args.kind === "ring"
+      ? "戒指空间逻辑（硬性）：先定义戒头主形与戒臂承重关系，再描述肩线如何过渡到主石座；禁止仅靠表面纹样制造复杂感。"
+      : "吊坠空间逻辑（硬性）：先定义吊环-主体-重心三者关系，再描述上中下层级与穿链路径；禁止只有平面图案缺少厚度逻辑。";
+  return [
+    "=== 结构优先审美升级（高优先级）===",
+    "设计表达顺序必须是：空间骨架 > 体块主次 > 负空间节奏 > 表面细节；禁止先堆风格词再补结构。",
+    "目标气质：让人感受到明确个性与时代气质，但不出现一眼可见的模板化风格符号堆叠。",
+    morphologyLine,
+    "负空间与穿插：至少给出 1-2 处可读留白/镂空/穿插关系，并说明它们如何服务主体识别、佩戴舒适与视觉呼吸感。",
+    gemDensityLine,
+    "纹样策略：纹理和雕饰只能做结构收口与节奏加强，不得成为主视觉噪声；避免“满版纹路+弱结构”的廉价感。",
+    "体量控制：主体、支撑、连接件要有明确比例（主 > 次 > 辅），并给出重心稳定逻辑，避免头重脚轻。",
+    "风格隐性化：风格名称最多出现一次，更多通过线条张力、曲率变化、转折节奏与工艺克制度来体现。",
+    "内检（勿输出）：若删去风格词后仍能读出设计个性与结构层次，才算合格；否则重写。",
+  ].join("\n");
 }
 
 export const STEP1_EXPAND_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
@@ -969,6 +1012,8 @@ export async function expandStep1PromptWithAi(args: ExpandArgs): Promise<ExpandR
     "8) 线条节奏与转折逻辑：主线连续可追踪，转折有因，不做随机折线或突兀跳变。",
     "9) 负空间与留白策略：留白服务识别与佩戴舒适，不制造尖刺孔洞或勾挂风险。",
     "10) 产品工艺说明：镜抛/拉丝/氧化/锤纹等工艺须与造型一致，并具备可量产性。",
+    "",
+    buildStep1ExpandStructuralAestheticsBlock({ prompt: args.prompt, kind: args.kind }),
     lengthRule,
     "",
     "HARD OUTPUT RULE — SINGLE HERO PRODUCT ONLY:",

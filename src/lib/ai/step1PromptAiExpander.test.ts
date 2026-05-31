@@ -5,6 +5,7 @@ import { buildStep1ExpandStyleGuidanceBlock } from "@/lib/step1/step1StyleOption
 import { buildMainStoneCutExpandSystemBlock } from "./mainStoneCutPool";
 import {
   analyzeStep1ReferencesWithAi,
+  buildStep1ExpandStructuralAestheticsBlock,
   buildStep1ExpandDisplayBackgroundClause,
   extractStep1ExpandFinalPrompt,
   finalizeStep1ExpandedPrompt,
@@ -28,6 +29,7 @@ import {
   resolveCompanionElementPolicy,
   step1ExpandDepthUsesThinking,
   userPromptForcesSingleElementOnly,
+  userPromptPrefersGemRichOrnateDirection,
   userPromptIndicatesMultiDesignElements,
   isKimiStep1ExpandModel,
 } from "./step1PromptAiExpander";
@@ -221,6 +223,38 @@ describe("companion element auto policy", () => {
     expect(userPromptForcesSingleElementOnly(p)).toBe(false);
     expect(userPromptIndicatesMultiDesignElements(p)).toBe(false);
     expect(resolveCompanionElementPolicy(p)).toBe("auto_add_one");
+  });
+});
+
+describe("structure-first aesthetics block", () => {
+  it("defaults to restrained gem strategy for non-ornate briefs", () => {
+    expect(userPromptPrefersGemRichOrnateDirection("天使羽翼戒指，简洁克制")).toBe(false);
+    const block = buildStep1ExpandStructuralAestheticsBlock({
+      prompt: "天使羽翼戒指，简洁克制",
+      kind: "ring",
+    });
+    expect(block).toContain("结构优先审美升级");
+    expect(block).toContain("主石 1 颗 + 配石 0-2 颗");
+    expect(block).toContain("戒指空间逻辑");
+  });
+
+  it("allows richer gem/ornament direction when user explicitly asks", () => {
+    expect(userPromptPrefersGemRichOrnateDirection("巴洛克密镶群镶戒指")).toBe(true);
+    const block = buildStep1ExpandStructuralAestheticsBlock({
+      prompt: "巴洛克密镶群镶戒指",
+      kind: "ring",
+    });
+    expect(block).toContain("用户已明确要求偏丰富");
+    expect(block).toContain(String(STEP1_EXPAND_MAX_GEM_COUNT));
+  });
+
+  it("switches morphology guidance by jewelry kind", () => {
+    const pendantBlock = buildStep1ExpandStructuralAestheticsBlock({
+      prompt: "凤凰吊坠，单主石",
+      kind: "pendant",
+    });
+    expect(pendantBlock).toContain("吊坠空间逻辑");
+    expect(pendantBlock).toContain("吊环-主体-重心");
   });
 });
 
