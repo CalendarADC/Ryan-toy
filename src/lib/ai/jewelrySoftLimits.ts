@@ -895,9 +895,11 @@ export function buildPendantOnModelScaleAndChainBlock(): string {
   return [
     "PENDANT ON-MODEL SCALE + CHAIN SPEC (strict):",
     "Treat the pendant body as a real wearable small piece: target physical height around **2.5 cm** (about 24–27 mm including bail if visible). This is a hard real-world size lock.",
+    "Scale correction priority (critical): compared with common over-close outputs, the pendant must read about **1/3 of that oversized visual volume**; keep it clearly visible but much smaller in frame.",
     "Render a **thin silver twisted-rope chain** (fine helix rope texture), not a thick curb/cable chain and not a leather cord.",
     "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck/collarbone composition, never an oversized talisman filling most of the chest area.",
     "Length/read lock: chain behaves like a normal short necklace drop with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
+    "Frame occupancy lock: pendant + bail should usually occupy only about **8%–14% of the full image area** in on-model shots (never dominant center-macro occupancy).",
     "FORBID scale failures: giant pendant hero (4–6+ cm visual read), zoomed-in framing that makes pendant appear unrealistically huge, toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
   ].join("\n");
 }
@@ -910,10 +912,11 @@ export function buildPendantOnModelFramingAndWardrobeBlock(
 ): string {
   const framing = [
     "NECKLACE WEARING CAMERA FRAMING (strict):",
-    "Use a clearly pulled-back medium close shot (not macro): include full lower neck + both clavicles + upper chest context so pendant scale reads naturally as real wearing.",
+    "Use a clearly pulled-back **small-medium wearing shot** (not macro): include full lower neck + both clavicles + a broader upper-chest window so pendant scale reads naturally as real wearing.",
     "Camera bearing may be true frontal or slight 10°–25° three-quarter side angle; keep pendant clearly readable and centered near chest focal area.",
     "FORBID tight local crop (only a tiny neck patch / pendant-only close-up), and forbid extreme side angle that hides pendant face.",
-    "Distance lock: maintain enough camera distance that chain path from neck base to pendant is readable on both sides; avoid beauty-macro jewelry close-up language.",
+    "Distance lock (critical): camera should be pulled back enough to show a longer chain path from both neck sides down to pendant; avoid beauty-macro jewelry close-up language.",
+    "Composition target: preserve generous breathing room around pendant; chest/neck context must dominate image area rather than pendant metal details.",
   ].join("\n");
   if (wearGender === "female") {
     return [
