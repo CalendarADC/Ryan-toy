@@ -26,7 +26,6 @@ import {
   buildReferenceFusionBlock,
   buildRingPhysicalBlock,
   userPromptIsReferenceEditInstruction,
-  buildNanoBananaProStep1SystemPrompt,
   buildStep1BatchMotifDiversityPreamble,
   buildStep1PerImageMotifVariantLine,
   buildDelicateRingMotifScaleIntegrationBlock,
@@ -366,8 +365,6 @@ export async function POST(req: Request) {
       refCount > 0 && cappyCalmLockPreset
         ? buildCappyCalmCharacterLockBlock(cappyCalmLockPreset)
         : "";
-    const systemPrompt = buildNanoBananaProStep1SystemPrompt(prompt);
-
     const pendantChainFinalLock =
       kind === "pendant"
         ? "\n\nPENDANT — FINAL LOCK (wins over reference + expansion): **No chain in frame.** Re-crop mentally: highest metal = bail loop; nothing linked above it. Violation = failed render."
@@ -435,10 +432,10 @@ export async function POST(req: Request) {
       : refCount > 0
         ? `${referencePreamble}${cappyCalmLock ? `\n\n${cappyCalmLock}` : ""}${
             strictSceneToneLock ? `\n\n${strictSceneToneLock}` : ""
-          }\n\n${systemPrompt}\n\n${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
+          }\n\n${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
             batchDiversity ? `\n\n${batchDiversity}` : ""
           }`
-        : `${systemPrompt}\n\n${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
+        : `${primaryCompanionConstraint}\n\n${boostedPrompt}\n\n${etsyMainConstraints}\n\n${productionSoftLimits}${
             batchDiversity ? `\n\n${batchDiversity}` : ""
           }`;
 
@@ -524,8 +521,7 @@ export async function POST(req: Request) {
     }
     images.push(...generated);
 
-    // ?? Step1 ? systemPrompt/????????????????????? prompt????????
-    // ?????????????????? images[].debugPromptZh??????????
+    // Step1 生产软限制不写入 userFacing / debugPromptZh；实际发给上游的是 promptForThis。
     return NextResponse.json({
       images,
       debugPromptZh: userFacingExpandedPromptCommon,
