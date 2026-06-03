@@ -901,7 +901,10 @@ export async function laoZhangImageToImage(args: {
 
 const KIE_BASE_URL = "https://api.kie.ai/api/v1";
 const KIE_MODEL = "nano-banana-pro";
-const KIE_POLL_INTERVAL_MS = 2200;
+/** 首轮 400ms 快查，逐步退避至 1.8s，减少 Kie 后台已出图但 recordInfo 仍 polling 的空等 */
+const KIE_POLL_INITIAL_MS = readPositiveIntEnv("KIE_POLL_INITIAL_MS", 400);
+const KIE_POLL_MAX_MS = readPositiveIntEnv("KIE_POLL_MAX_MS", 1800);
+const KIE_POLL_GROWTH = 1.35;
 const KIE_POLL_TIMEOUT_MS = 270_000;
 const KIE_PROMPT_MAX_BYTES = 9_500;
 
@@ -1073,6 +1076,7 @@ async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<st
   const startedAt = Date.now();
   let lastStatus = "";
   let lastMsg = "";
+  let pollIntervalMs = KIE_POLL_INITIAL_MS;
   while (Date.now() - startedAt < KIE_POLL_TIMEOUT_MS) {
     const res = await fetchWithTimeout(
       `${KIE_BASE_URL}/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
@@ -1103,7 +1107,8 @@ async function waitKieTaskResult(taskId: string, kieApiKey?: string): Promise<st
     if (isKieFailedStatus(status)) {
       throw new Error(`Kie task failed: ${data.data?.failMsg || data.msg || data.message || "upstream status=failed"}`);
     }
-    await sleep(KIE_POLL_INTERVAL_MS);
+    await sleep(pollIntervalMs);
+    pollIntervalMs = Math.min(KIE_POLL_MAX_MS, Math.round(pollIntervalMs * KIE_POLL_GROWTH));
   }
   throw new Error(`Kie task timed out (taskId=${taskId}, lastStatus=${lastStatus || "unknown"}, msg=${lastMsg || "n/a"}). Please retry.`);
 }
@@ -1115,7 +1120,7 @@ async function fetchImageUrlAsBase64(url: string): Promise<string> {
   return Buffer.from(arr).toString("base64");
 }
 
-async function runKieNanoBanana(args: {
+async function runKieNanoBananaResultUrl(args: {
   prompt: string;
   aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
   imageSize: ImageSize;
@@ -1123,8 +1128,27 @@ async function runKieNanoBanana(args: {
   kieApiKey?: string;
 }): Promise<string> {
   const taskId = await createKieTask(args);
-  const resultUrl = await waitKieTaskResult(taskId, args.kieApiKey);
+  return waitKieTaskResult(taskId, args.kieApiKey);
+}
+
+async function runKieNanoBanana(args: {
+  prompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  imageInputUrls?: string[];
+  kieApiKey?: string;
+}): Promise<string> {
+  const resultUrl = await runKieNanoBananaResultUrl(args);
   return fetchImageUrlAsBase64(resultUrl);
+}
+
+export async function kieTextToImageResultUrl(args: {
+  prompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBananaResultUrl(args);
 }
 
 export async function kieTextToImage(args: {
@@ -1134,6 +1158,19 @@ export async function kieTextToImage(args: {
   kieApiKey?: string;
 }): Promise<string> {
   return runKieNanoBanana(args);
+}
+
+export async function kieImageToImageResultUrl(args: {
+  prompt: string;
+  initImageUrl: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBananaResultUrl({
+    ...args,
+    imageInputUrls: [args.initImageUrl],
+  });
 }
 
 export async function kieImageToImage(args: {
@@ -1146,6 +1183,19 @@ export async function kieImageToImage(args: {
   return runKieNanoBanana({
     ...args,
     imageInputUrls: [args.initImageUrl],
+  });
+}
+
+export async function kieImagesToImageResultUrl(args: {
+  prompt: string;
+  initImageUrls: string[];
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+}): Promise<string> {
+  return runKieNanoBananaResultUrl({
+    ...args,
+    imageInputUrls: args.initImageUrls,
   });
 }
 

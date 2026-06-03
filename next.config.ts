@@ -19,6 +19,14 @@ const nextConfig: NextConfig = {
             "./node_modules/@aws-crypto/**/*",
           ],
         },
+        /** 项目根下的历史安装包目录不应进入 standalone，否则每发一版会嵌套上一份 release-dist。 */
+        outputFileTracingExcludes: {
+          "/*": [
+            "./release-dist/**",
+            "./release-dist-*/**",
+            "./release-win-unpacked/**",
+          ],
+        },
         /**
          * Electron asar 内不可写：禁用优化与磁盘图片缓存，避免 ENOTDIR。
          * middleware 对 /_next/image 直接重定向到原图，避免触碰 ImageOptimizerCache。

@@ -4,7 +4,7 @@ import type { GalleryImage, GalleryImageType } from "@/store/jewelryGeneratorSto
 
 import {
   kieImageFailureUserHint,
-  kieImageToImage,
+  kieImageToImageResultUrl,
   laoZhangImageFailureUserHint,
   laoZhangImageToImage,
   resolveLaoZhangImageModelFromBanana,
@@ -45,7 +45,11 @@ import {
 } from "@/lib/apiLaoZhangKey";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
-import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
+import {
+  createKiePreviewImageId,
+  persistGeneratedImage,
+  schedulePersistGeneratedImageFromUrl,
+} from "@/lib/images/persistGeneratedImage";
 import { uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
 
@@ -60,6 +64,49 @@ function withEnhanceSoftLimits(
 ): string {
   const kind = inferJewelryProductKind(prompt);
   return `${corePrompt}\n\n${buildEnhanceSoftLimitSuffix(prompt, kind, thisShotOnModel)}`;
+}
+
+async function persistEnhanceShot(args: {
+  imageApiVendor: "laozhang" | "kie";
+  initImageUrl: string;
+  editPrompt: string;
+  aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+  imageSize: ImageSize;
+  kieApiKey?: string;
+  laoZhangArgs: Parameters<typeof laoZhangImageToImage>[0];
+  persistArgs: {
+    userId: string;
+    taskId?: string;
+    kind: string;
+    sourceMainImageId?: string;
+    debugPromptZh?: string;
+    keyPrefix: string;
+    localMode?: boolean;
+    clientOnly?: boolean;
+  };
+}): Promise<{ id: string; url: string }> {
+  if (args.imageApiVendor === "kie") {
+    const resultUrl = await kieImageToImageResultUrl({
+      initImageUrl: args.initImageUrl,
+      prompt: args.editPrompt,
+      aspectRatio: args.aspectRatio,
+      imageSize: args.imageSize,
+      kieApiKey: args.kieApiKey,
+    });
+    const id = createKiePreviewImageId();
+    schedulePersistGeneratedImageFromUrl({
+      id,
+      sourceUrl: resultUrl,
+      ...args.persistArgs,
+      logLabel: "enhance/kie-persist",
+    });
+    return { id, url: resultUrl };
+  }
+  const base64 = await laoZhangImageToImage(args.laoZhangArgs);
+  return persistGeneratedImage({
+    ...args.persistArgs,
+    base64,
+  });
 }
 
 /** Step3??? Step2 ?????????????????? */
@@ -620,30 +667,28 @@ export async function POST(req: Request) {
       const debugPromptZh = `穿戴图 / On-model\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgs,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "on_model",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/on_model`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgs,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "on_model",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/on_model`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -693,30 +738,28 @@ export async function POST(req: Request) {
       );
       const debugPromptZh = `手持视角 / Handheld\n用户 prompt：${prompt}\n\n${editPrompt}`;
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgs,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "handheld",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/handheld`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgs,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "handheld",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/handheld`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -759,30 +802,28 @@ export async function POST(req: Request) {
       const debugPromptZh = `左侧视图 / Left view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgsLeftRight,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "left",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/left`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgsLeftRight,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "left",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/left`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -825,30 +866,28 @@ export async function POST(req: Request) {
       const debugPromptZh = `右侧视图 / Right view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgsLeftRight,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "right",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/right`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgsLeftRight,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "right",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/right`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -897,30 +936,28 @@ export async function POST(req: Request) {
       const debugPromptZh = `后视图 / Rear view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgsProductOrbit,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "rear",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/rear`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgsProductOrbit,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "rear",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/rear`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,
@@ -963,30 +1000,28 @@ export async function POST(req: Request) {
       const debugPromptZh = `正视图 / Front view\n用户 prompt：${prompt}\n\n${editPrompt}`;
 
       await runOneShot(async () => {
-        const base64 =
-          imageApiVendor === "kie"
-            ? await kieImageToImage({
-                initImageUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : await laoZhangImageToImage({
-                initImageDataUrl: resolvedMainImageUrl,
-                prompt: editPrompt,
-                ...sharedImgArgsProductOrbit,
-              });
-        const persisted = await persistGeneratedImage({
-          userId: authz.user.id,
-          taskId: taskIdForPersist,
-          kind: "front",
-          base64,
-          sourceMainImageId: selectedMainImageId,
-          debugPromptZh,
-          keyPrefix: `users/${authz.user.id}/step3/front`,
-          localMode: imagePersistMode.localDisk,
-          clientOnly: imagePersistMode.clientOnly,
+        const persisted = await persistEnhanceShot({
+          imageApiVendor,
+          initImageUrl: resolvedMainImageUrl,
+          editPrompt,
+          aspectRatio,
+          imageSize,
+          kieApiKey,
+          laoZhangArgs: {
+            initImageDataUrl: resolvedMainImageUrl,
+            prompt: editPrompt,
+            ...sharedImgArgsProductOrbit,
+          },
+          persistArgs: {
+            userId: authz.user.id,
+            taskId: taskIdForPersist,
+            kind: "front",
+            sourceMainImageId: selectedMainImageId,
+            debugPromptZh,
+            keyPrefix: `users/${authz.user.id}/step3/front`,
+            localMode: imagePersistMode.localDisk,
+            clientOnly: imagePersistMode.clientOnly,
+          },
         });
         return makeGalleryImage({
           id: persisted.id,

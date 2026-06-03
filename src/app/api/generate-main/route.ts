@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   kieImageFailureUserHint,
-  kieImagesToImage,
-  kieTextToImage,
+  kieImagesToImageResultUrl,
+  kieTextToImageResultUrl,
   laoZhangImageFailureUserHint,
   laoZhangImagesToImage,
   laoZhangTextToImage,
@@ -47,7 +47,7 @@ import {
 } from "@/lib/apiLaoZhangKey";
 import { isDesktopBundledClientRequest } from "@/lib/runtime/desktopLocalMode";
 import { resolveImagePersistMode } from "@/lib/runtime/imagePersistMode";
-import { persistGeneratedImage } from "@/lib/images/persistGeneratedImage";
+import { persistGeneratedImage, createKiePreviewImageId, schedulePersistGeneratedImageFromUrl } from "@/lib/images/persistGeneratedImage";
 import { explainObjectStorageDisabled, uploadBinaryToObjectStorage } from "@/lib/storage/objectStorage";
 import { buildCappyCalmCharacterLockBlock } from "@/lib/ip/cappyCalm";
 import { ensureOwnedTaskId, shouldTrustClientTaskId } from "@/lib/tasks/resolveTask";
@@ -453,44 +453,54 @@ export async function POST(req: Request) {
       return { promptForThis, userFacingExpandedPromptForThis };
     });
 
-    const base64List = await Promise.all(
-      step1PromptEntries.map((e) =>
-        imageApiVendor === "kie"
-          ? refCount > 0
-            ? kieImagesToImage({
-                initImageUrls: kieReferenceImageUrls,
-                prompt: e.promptForThis,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-            : kieTextToImage({
-                prompt: e.promptForThis,
-                aspectRatio,
-                imageSize,
-                kieApiKey,
-              })
-          : refCount > 0
-            ? laoZhangImagesToImage({
-                initImageDataUrls: referenceImageDataUrls,
-                prompt: e.promptForThis,
-                aspectRatio,
-                imageSize,
-                sampling,
-                laoZhangImageModel,
-                laozhangApiKey,
-                promptAfterImages: isReferenceEdit,
-              })
-            : laoZhangTextToImage({
-                prompt: e.promptForThis,
-                aspectRatio,
-                imageSize,
-                sampling,
-                laoZhangImageModel,
-                laozhangApiKey,
-              })
-      )
-    );
+    const base64List =
+      imageApiVendor === "kie"
+        ? null
+        : await Promise.all(
+            step1PromptEntries.map((e) =>
+              refCount > 0
+                ? laoZhangImagesToImage({
+                    initImageDataUrls: referenceImageDataUrls,
+                    prompt: e.promptForThis,
+                    aspectRatio,
+                    imageSize,
+                    sampling,
+                    laoZhangImageModel,
+                    laozhangApiKey,
+                    promptAfterImages: isReferenceEdit,
+                  })
+                : laoZhangTextToImage({
+                    prompt: e.promptForThis,
+                    aspectRatio,
+                    imageSize,
+                    sampling,
+                    laoZhangImageModel,
+                    laozhangApiKey,
+                  })
+            )
+          );
+
+    const kieResultUrlList =
+      imageApiVendor === "kie"
+        ? await Promise.all(
+            step1PromptEntries.map((e) =>
+              refCount > 0
+                ? kieImagesToImageResultUrl({
+                    initImageUrls: kieReferenceImageUrls,
+                    prompt: e.promptForThis,
+                    aspectRatio,
+                    imageSize,
+                    kieApiKey,
+                  })
+                : kieTextToImageResultUrl({
+                    prompt: e.promptForThis,
+                    aspectRatio,
+                    imageSize,
+                    kieApiKey,
+                  })
+            )
+          )
+        : null;
 
     const generated: Array<{
       id: string;
@@ -500,7 +510,31 @@ export async function POST(req: Request) {
     }> = [];
     for (let i = 0; i < count; i++) {
       const { userFacingExpandedPromptForThis } = step1PromptEntries[i]!;
-      const base64 = base64List[i];
+      if (imageApiVendor === "kie") {
+        const resultUrl = kieResultUrlList?.[i]?.trim();
+        if (!resultUrl) continue;
+        const id = createKiePreviewImageId();
+        generated.push({
+          id,
+          url: resultUrl,
+          createdAt: now,
+          debugPromptZh: userFacingExpandedPromptForThis,
+        });
+        schedulePersistGeneratedImageFromUrl({
+          id,
+          sourceUrl: resultUrl,
+          userId: authz.user.id,
+          taskId,
+          kind: "main",
+          debugPromptZh: userFacingExpandedPromptForThis,
+          keyPrefix: `users/${authz.user.id}/step1`,
+          localMode: imagePersistMode.localDisk,
+          clientOnly: imagePersistMode.clientOnly,
+          logLabel: "generate-main/kie-persist",
+        });
+        continue;
+      }
+      const base64 = base64List?.[i];
       if (!base64) continue;
       const persisted = await persistGeneratedImage({
         userId: authz.user.id,

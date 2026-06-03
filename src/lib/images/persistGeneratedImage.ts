@@ -10,6 +10,26 @@ import { uploadPngBase64ToObjectStorage } from "@/lib/storage/objectStorage";
 const PRISMA_POOL_TIMEOUT_HINT = "Timed out fetching a new connection from the connection pool";
 const PRISMA_STATEMENT_TIMEOUT_HINT = "canceling statement due to statement timeout";
 const PERSIST_CREATE_MAX_ATTEMPTS = 5;
+const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 120_000;
+
+export function createKiePreviewImageId(): string {
+  return `kie_${Date.now()}_${randomBytes(8).toString("hex")}`;
+}
+
+async function fetchRemoteImageAsBase64(sourceUrl: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(sourceUrl, { method: "GET", redirect: "follow", signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`Failed to download remote image (HTTP ${res.status}).`);
+    }
+    const arr = await res.arrayBuffer();
+    return Buffer.from(arr).toString("base64");
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,15 +65,16 @@ function persistPngToLocalMedia(args: {
   userId: string;
   keyPrefix: string;
   base64: string;
+  id?: string;
 }): { id: string; url: string } {
   const root = process.env.GEMMUSE_LOCAL_MEDIA_DIR?.trim();
+  const id = args.id?.trim() || `local_${Date.now()}_${randomBytes(8).toString("hex")}`;
   if (!root) {
     return {
-      id: `local_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      id,
       url: toDataPng(args.base64),
     };
   }
-  const id = `local_${Date.now()}_${randomBytes(8).toString("hex")}`;
   const userSeg = sanitizeSegment(args.userId);
   const sub = ["generated", userSeg, ...keyPrefixToSegments(args.keyPrefix)];
   const rootResolved = resolve(root);
@@ -82,10 +103,12 @@ export async function persistGeneratedImage(args: {
   localMode?: boolean;
   /** 网页单机：仅返回 data URL，由浏览器 IndexedDB 持久化 */
   clientOnly?: boolean;
+  /** 本地/预览模式可指定 id，便于 Kie 先展示后落盘 */
+  id?: string;
 }): Promise<{ id: string; url: string; objectKey?: string }> {
   if (args.clientOnly) {
     return {
-      id: `client_${Date.now()}_${randomBytes(8).toString("hex")}`,
+      id: args.id?.trim() || `client_${Date.now()}_${randomBytes(8).toString("hex")}`,
       url: toDataPng(args.base64),
     };
   }
@@ -94,6 +117,7 @@ export async function persistGeneratedImage(args: {
       userId: args.userId,
       keyPrefix: args.keyPrefix,
       base64: args.base64,
+      id: args.id,
     });
   }
   const objectKey = `${args.keyPrefix}/${Date.now()}_${Math.random().toString(16).slice(2)}.png`;
@@ -136,5 +160,26 @@ export async function persistGeneratedImage(args: {
       }
     }
     throw lastError instanceof Error ? lastError : new Error("persistGeneratedImage failed");
+  });
+}
+
+export async function persistGeneratedImageFromUrl(
+  args: Omit<Parameters<typeof persistGeneratedImage>[0], "base64"> & { sourceUrl: string }
+): Promise<{ id: string; url: string; objectKey?: string }> {
+  const base64 = await fetchRemoteImageAsBase64(args.sourceUrl);
+  const { sourceUrl: _sourceUrl, ...persistArgs } = args;
+  return persistGeneratedImage({ ...persistArgs, base64 });
+}
+
+/** Kie 已出图 URL 后异步落盘，避免阻塞 API 响应 */
+export function schedulePersistGeneratedImageFromUrl(
+  args: Omit<Parameters<typeof persistGeneratedImageFromUrl>[0], "sourceUrl"> & {
+    sourceUrl: string;
+    logLabel?: string;
+  }
+): void {
+  const { logLabel, ...persistArgs } = args;
+  void persistGeneratedImageFromUrl(persistArgs).catch((error) => {
+    console.error(`[${logLabel || "kie-persist"}] background persist failed`, error);
   });
 }
