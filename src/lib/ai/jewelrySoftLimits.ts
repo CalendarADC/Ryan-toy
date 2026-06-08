@@ -928,6 +928,88 @@ export function buildPendantOnModelFramingAndWardrobeBlock(
   ].join("\n");
 }
 
+function buildPendantOnModelWardrobeByStyleCue(
+  cue: PendantOnModelStyleCue,
+  wearGender?: "male" | "female" | null
+): string {
+  const isMale = wearGender === "male";
+  const isFemale = wearGender === "female";
+  const femaleOrAuto = isMale ? false : true;
+  if (cue === "gothic_dark") {
+    return femaleOrAuto
+      ? "Wardrobe match (gothic_dark, female/auto): black or charcoal deep V / square neck knit; minimal cool makeup; no chest prints."
+      : "Wardrobe match (gothic_dark, male): black crew or henley, dark gray layer; clean masculine silhouette.";
+  }
+  if (cue === "vintage_art") {
+    return femaleOrAuto
+      ? "Wardrobe match (vintage_art, female/auto): cream / ivory / beige vintage blouse or soft square neck; linen or velvet texture hint."
+      : "Wardrobe match (vintage_art, male): oatmeal knit or open-collar shirt; warm-neutral retro gentleman casual.";
+  }
+  if (cue === "minimal_modern") {
+    return femaleOrAuto
+      ? "Wardrobe match (minimal_modern, female/auto): white / black / gray solid top; no pattern; crisp neckline."
+      : "Wardrobe match (minimal_modern, male): solid tee or fine knit; no logo; minimal accessories.";
+  }
+  if (cue === "nature_poetic") {
+    return femaleOrAuto
+      ? "Wardrobe match (nature_poetic, female/auto): soft earth-tone cotton / linen round neck; light, not bohemian-layered."
+      : "Wardrobe match (nature_poetic, male): olive / sand simple top; relaxed natural posture.";
+  }
+  if (cue === "cyber_future") {
+    return femaleOrAuto
+      ? "Wardrobe match (cyber_future, female/auto): dark gray sleek top; cool-tone neckline friendly to metal highlights."
+      : "Wardrobe match (cyber_future, male): dark technical-fabric top; sharp lines; no sci-fi clutter.";
+  }
+  if (isFemale) {
+    return "Wardrobe match (street, female): clean white / gray / black tee or fine knit; Etsy everyday editorial.";
+  }
+  if (isMale) {
+    return "Wardrobe match (street, male): neutral contemporary tee / knit; unisex street-commercial.";
+  }
+  return "Wardrobe match (street, auto — female-biased): clean white / gray / black tee or fine knit; everyday Etsy necklace editorial.";
+}
+
+/**
+ * Step2 吊坠/项链穿戴图：模特人种池（白人+拉丁/地中海为主）与款式匹配服装
+ */
+export function buildPendantOnModelCastingAndWardrobeBlock(
+  prompt: string,
+  wearGender?: "male" | "female" | null
+): string {
+  const cue = inferPendantOnModelStyleCue(prompt);
+  const castingPool = [
+    "PENDANT ON-MODEL CASTING (~90% primary pool, strict default):",
+    "In roughly **9 out of 10** on-model pendant shots, cast an adult model as **Caucasian (European / North American)** OR **Latino/Latina / Hispanic / Mediterranean–Southern European**.",
+    "Caucasian read: fair to light-medium natural skin, believable pores/texture, Western Etsy jewelry e-commerce neck and collarbone proportions.",
+    "Latino / Mediterranean read: warm olive, wheat, or light-brown Southern European / Hispanic skin; natural neck/shoulder lines — includes Mediterranean and Latin American casting, not East Asian or South Asian default.",
+    "Occasional (~10%): other ethnic presentations are allowed only when the **user prompt explicitly** requests a specific cultural motif or when the SKU narrative clearly demands it — never as the silent default.",
+    "Face de-emphasized: prefer chin-to-upper-chest crop; pendant + chain remain the product hero.",
+  ].join("\n");
+
+  const genderCasting =
+    wearGender === "male"
+      ? [
+          "GENDER LOCK (user selected male): adult **male** neck / upper chest wearer (strict); masculine posture and wardrobe.",
+        ].join("\n")
+      : wearGender === "female"
+        ? [
+            "GENDER LOCK (user selected female): adult **female** neck / upper chest wearer (strict); feminine Etsy on-model necklace presentation.",
+          ].join("\n")
+        : [
+            "GENDER AUTO (Etsy jewelry default): when user did not fix gender, **bias ~70% adult female** wearer — standard for Etsy necklace listings.",
+            "Use adult male wearer only when the pendant SKU + user brief clearly read masculine (e.g. heavy chain, biker / dark male gothic cues); still obey the ~90% Caucasian+Latino/Mediterranean casting pool.",
+          ].join("\n");
+
+  const wardrobeCommon = [
+    "WARDROBE–PENDANT STYLE MATCH (strict): outfit MUST support the inferred pendant style; neckline MUST expose clavicles and full chain path.",
+    buildPendantOnModelWardrobeByStyleCue(cue, wearGender),
+    "FORBID: turtleneck, scarf, heavy chest layering, large logos/prints, competing necklaces, or wardrobe louder than the pendant.",
+    "SAFETY: no nipple exposure, no explicit sexual posing, no fetish framing.",
+  ].join("\n");
+
+  return [castingPool, genderCasting, wardrobeCommon].join("\n\n");
+}
+
 /**
  * Step2 吊坠/项链穿戴图：按首饰风格自动匹配模特气质
  */
@@ -945,7 +1027,7 @@ export function buildPendantOnModelStyleAdaptiveBlock(
     if (wearGender === "female") {
       return "Gender fit (female selected): use a feminine neck/shoulder styling read (wardrobe and posture), keep elegance and product clarity.";
     }
-    return "Gender fit (auto/unisex): keep styling neutral-commercial and broadly wearable.";
+    return "Gender fit (auto): Etsy necklace default — **female-biased** styling (~70%); neutral-commercial when male is chosen for the SKU.";
   };
   if (cue === "gothic_dark") {
     return [
