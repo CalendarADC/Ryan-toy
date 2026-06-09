@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPendantOnModelCastingAndWardrobeBlock } from "./jewelrySoftLimits";
+import {
+  buildPendantOnModelCastingAndWardrobeBlock,
+  buildPendantOnModelCreativeVarietyBlock,
+} from "./jewelrySoftLimits";
 
 describe("buildPendantOnModelCastingAndWardrobeBlock", () => {
   it("includes ~90% Caucasian and Latino/Mediterranean casting pool", () => {
@@ -23,9 +26,26 @@ describe("buildPendantOnModelCastingAndWardrobeBlock", () => {
     expect(block).not.toMatch(/~70% adult female/i);
   });
 
-  it("maps gothic prompt to dark wardrobe", () => {
-    const block = buildPendantOnModelCastingAndWardrobeBlock("gothic dark occult pendant", "female");
-    expect(block).toMatch(/gothic_dark/i);
-    expect(block).toMatch(/charcoal|black/i);
+  it("rotates gothic male wardrobe by variety seed", () => {
+    const a = buildPendantOnModelCastingAndWardrobeBlock("gothic dragon pendant", "male", "seed-a");
+    const b = buildPendantOnModelCastingAndWardrobeBlock("gothic dragon pendant", "male", "seed-b");
+    expect(a).toMatch(/gothic_dark/i);
+    expect(a).toMatch(/Variant [A-D]/i);
+    expect(b).toMatch(/Variant [A-D]/i);
+    expect(a).not.toEqual(b);
+  });
+
+  it("forbids default charcoal crew tee repetition", () => {
+    const block = buildPendantOnModelCastingAndWardrobeBlock("gothic pendant", "male", "x1");
+    expect(block).toMatch(/charcoal crew-neck tee/i);
+  });
+});
+
+describe("buildPendantOnModelCreativeVarietyBlock", () => {
+  it("requires SKU-driven art direction and anti-template", () => {
+    const block = buildPendantOnModelCreativeVarietyBlock("dragon skull pendant", "male", "run-1");
+    expect(block).toMatch(/init pendant/i);
+    expect(block).toMatch(/charcoal crew-neck t-shirt/i);
+    expect(block).toMatch(/Shot instance run-1/i);
   });
 });

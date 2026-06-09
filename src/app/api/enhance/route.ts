@@ -17,6 +17,7 @@ import {
 } from "@/lib/ai/enhancePromptBlocks";
 import {
   buildPendantOnModelCastingAndWardrobeBlock,
+  buildPendantOnModelCreativeVarietyBlock,
   buildPendantOnModelFramingAndWardrobeBlock,
   buildPendantOnModelScaleAndChainBlock,
   buildPendantOnModelStyleAdaptiveBlock,
@@ -653,7 +654,8 @@ export async function POST(req: Request) {
               step3PendantBailTopologyLockBlock(true),
               buildPendantOnModelScaleAndChainBlock(),
               buildPendantOnModelFramingAndWardrobeBlock(wearGender),
-              buildPendantOnModelCastingAndWardrobeBlock(prompt, wearGender),
+              buildPendantOnModelCreativeVarietyBlock(prompt, wearGender, runNonce),
+              buildPendantOnModelCastingAndWardrobeBlock(prompt, wearGender, runNonce),
               buildPendantOnModelStyleAdaptiveBlock(prompt, wearGender),
               "Generate an on-model shot: necklace/pendant worn naturally in a pulled-back small-medium framing (full lower neck + both clavicles + broader upper chest visible, no face focus); keep pendant visual size around one-third of typical over-close crop outputs.",
               "Chain must drape naturally with gravity; chain links distinct and readable ? not a blurry rope.",

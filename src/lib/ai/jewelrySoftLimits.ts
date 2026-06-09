@@ -867,7 +867,13 @@ type PendantOnModelStyleCue =
 function inferPendantOnModelStyleCue(prompt: string): PendantOnModelStyleCue {
   const p = prompt.trim().toLowerCase();
   if (!p) return "street_unisex";
-  if (/(gothic|暗黑|哥特|黑金|occult|ritual|神秘|符文)/i.test(prompt)) return "gothic_dark";
+  if (
+    /(gothic|暗黑|哥特|黑金|occult|ritual|神秘|符文|dragon|龙|skull|骷髅|biker|机车|viking|nordic|fantasy|奇幻)/i.test(
+      prompt
+    )
+  ) {
+    return "gothic_dark";
+  }
   if (/(vintage|antique|复古|做旧|新艺术|art nouveau|装饰艺术|art deco)/i.test(prompt)) {
     return "vintage_art";
   }
@@ -875,6 +881,159 @@ function inferPendantOnModelStyleCue(prompt: string): PendantOnModelStyleCue {
   if (/(nature|botanical|floral|植物|花|月亮|月相|森系)/i.test(prompt)) return "nature_poetic";
   if (/(cyber|futur|赛博|机甲|数字|科技感)/i.test(prompt)) return "cyber_future";
   return "street_unisex";
+}
+
+function pickPendantOnModelWardrobeVariantIndex(seed: string): number {
+  let hash = 0;
+  const s = seed.trim() || "pendant-default";
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return hash % 4;
+}
+
+const PENDANT_ON_MODEL_WARDROBE_VARIANTS: Record<
+  PendantOnModelStyleCue,
+  { female: [string, string, string, string]; male: [string, string, string, string] }
+> = {
+  gothic_dark: {
+    female: [
+      "Variant A (gothic_dark, female): deep V black silk or satin top; cool minimal makeup; no chest prints.",
+      "Variant B (gothic_dark, female): charcoal off-shoulder or one-shoulder knit — **not** a basic crew tee.",
+      "Variant C (gothic_dark, female): fitted black mock-neck with subtle open-collar detail; edgy but clean.",
+      "Variant D (gothic_dark, female): dark wine / burgundy velvet square neck; moody contrast for silver oxidized pendants.",
+    ],
+    male: [
+      "Variant A (gothic_dark, male): **black open-collar shirt** (linen or cotton, 1–2 buttons open) — **NOT** a plain charcoal crew-neck tee.",
+      "Variant B (gothic_dark, male): washed black **henley** with neck slightly open; masculine, not athletic-gym.",
+      "Variant C (gothic_dark, male): matte black **fine-gauge V-neck knit**; clean lines; no logos.",
+      "Variant D (gothic_dark, male): **dark leather jacket collar / lapel** framing the neck only (jacket is not the hero); biker-adjacent when SKU reads dragon/skull/heavy metal.",
+    ],
+  },
+  vintage_art: {
+    female: [
+      "Variant A (vintage_art, female): cream ivory blouse with soft square neck; linen texture.",
+      "Variant B (vintage_art, female): champagne satin camisole; art-deco calm mood.",
+      "Variant C (vintage_art, female): dusty rose vintage knit; warm-neutral palette.",
+      "Variant D (vintage_art, female): light camel open cardigan over neutral camisole; refined retro.",
+    ],
+    male: [
+      "Variant A (vintage_art, male): oatmeal open-collar shirt; warm gentleman casual.",
+      "Variant B (vintage_art, male): soft brown fine knit crew — **muted earth**, not default dark grey tee.",
+      "Variant C (vintage_art, male): cream mandarin-collar or band-collar shirt; subtle retro.",
+      "Variant D (vintage_art, male): taupe lightweight blazer lapel hint at collarbone; editorial vintage.",
+    ],
+  },
+  minimal_modern: {
+    female: [
+      "Variant A (minimal_modern, female): crisp white structured top; square or boat neck.",
+      "Variant B (minimal_modern, female): black minimal tank with clean straps.",
+      "Variant C (minimal_modern, female): cool light gray fine knit; no pattern.",
+      "Variant D (minimal_modern, female): architectural one-shoulder white top; gallery-clean.",
+    ],
+    male: [
+      "Variant A (minimal_modern, male): **white** minimal tee — rotate away from dark grey default.",
+      "Variant B (minimal_modern, male): black fine-knit crew; **only when** high-contrast minimal SKU needs it.",
+      "Variant C (minimal_modern, male): light gray merino crew; Scandinavian minimal.",
+      "Variant D (minimal_modern, male): black mandarin-collar minimal shirt; no logo.",
+    ],
+  },
+  nature_poetic: {
+    female: [
+      "Variant A (nature_poetic, female): sage green cotton round neck; airy natural.",
+      "Variant B (nature_poetic, female): sand linen camisole; soft daylight mood.",
+      "Variant C (nature_poetic, female): dusty blue lightweight knit; moon/floral SKUs.",
+      "Variant D (nature_poetic, female): terracotta rust fine knit; warm botanical harmony.",
+    ],
+    male: [
+      "Variant A (nature_poetic, male): olive green relaxed tee; outdoor-soft tone.",
+      "Variant B (nature_poetic, male): sand / wheat henley; natural texture.",
+      "Variant C (nature_poetic, male): forest green fine knit; earthy poetic.",
+      "Variant D (nature_poetic, male): slate-blue chambray open collar; calm nature editorial.",
+    ],
+  },
+  cyber_future: {
+    female: [
+      "Variant A (cyber_future, female): graphite sleek mock-neck; cool specular-friendly.",
+      "Variant B (cyber_future, female): black tech-fabric zip collar slightly open.",
+      "Variant C (cyber_future, female): metallic-silver gray fine top; futuristic clean.",
+      "Variant D (cyber_future, female): deep navy structured top; cool editorial.",
+    ],
+    male: [
+      "Variant A (cyber_future, male): dark technical-fabric crew; sharp minimal.",
+      "Variant B (cyber_future, male): black zip-neck base layer; modern tactical-clean.",
+      "Variant C (cyber_future, male): charcoal structured shirt; angular collar.",
+      "Variant D (cyber_future, male): steel-gray fine knit; cool futuristic.",
+    ],
+  },
+  street_unisex: {
+    female: [
+      "Variant A (street, female): white everyday tee; Etsy clean editorial.",
+      "Variant B (street, female): soft heather gray knit; casual neutral.",
+      "Variant C (street, female): black fine rib tank; urban minimal.",
+      "Variant D (street, female): dusty pink or mauve casual top; rotate palette.",
+    ],
+    male: [
+      "Variant A (street, male): **white or heather** tee — avoid repeating dark charcoal crew every SKU.",
+      "Variant B (street, male): navy crew; classic commercial rotation.",
+      "Variant C (street, male): washed olive casual tee; warm street tone.",
+      "Variant D (street, male): light gray marl knit; neutral contemporary.",
+    ],
+  },
+};
+
+function buildPendantOnModelWardrobeByStyleCue(
+  cue: PendantOnModelStyleCue,
+  wearGender?: "male" | "female" | null,
+  varietySeed = ""
+): string {
+  const variantIndex = pickPendantOnModelWardrobeVariantIndex(
+    `${varietySeed}|${cue}|${wearGender ?? "auto"}`
+  );
+  const isMale = wearGender === "male";
+  const pool = isMale
+    ? PENDANT_ON_MODEL_WARDROBE_VARIANTS[cue].male
+    : PENDANT_ON_MODEL_WARDROBE_VARIANTS[cue].female;
+  const selected = pool[variantIndex]!;
+  const rotateNote =
+    "Wardrobe rotation policy: variants A/B/C/D are intentionally rotated across requests — execute **only** the selected variant below for this shot; do not default to the same dark crew tee every time.";
+  return `${rotateNote}\nSELECTED FOR THIS SHOT: ${selected}`;
+}
+
+/**
+ * 吊坠 on-model：按 SKU + brief 自由选模特/装扮，禁止固定模板重复（如男模灰 T 恤）
+ */
+export function buildPendantOnModelCreativeVarietyBlock(
+  prompt: string,
+  wearGender?: "male" | "female" | null,
+  varietySeed = ""
+): string {
+  const brief = prompt.trim();
+  const briefLine = brief
+    ? `User creative brief (mood / story — not a rigid wardrobe lookup): ${brief.slice(0, 800)}`
+    : "User brief is minimal — infer wearing story from the **init pendant SKU** (motif, metal finish, stone palette, scale, narrative).";
+  const instanceLine = varietySeed
+    ? `Shot instance ${varietySeed}: fresh art direction for this request; do not reuse a memorized model + outfit + backdrop combo from prior generations.`
+    : "";
+  const genderHint =
+    wearGender === "male"
+      ? "Wearer gender is locked **male** — still vary outfit, skin micro-details, and background per SKU."
+      : wearGender === "female"
+        ? "Wearer gender is locked **female** — still vary outfit, styling, and background per SKU."
+        : "Auto gender (~70% female for Etsy) — vary wearer presentation across SKUs; do not reuse one default faceless female template.";
+
+  return [
+    "PENDANT ON-MODEL — CREATIVE FREEDOM + ANTI-TEMPLATE (strict):",
+    briefLine,
+    instanceLine,
+    genderHint,
+    "CREATIVE DIRECTOR MANDATE: Read the **attached init pendant** (dragon, skull, floral, geometric, religious, animal, etc.) and user brief; cast model + wardrobe + background that **match this exact design** — not a one-size-fits-all stock photo.",
+    "VARIETY (strict): Do **NOT** collapse every SKU into the same outfit — especially **plain dark charcoal crew-neck t-shirt on male models**, identical grey tee crops, or the same faceless clavicle template repeated across unrelated designs.",
+    "Each generation must feel intentionally art-directed for **this** pendant: different neckline shape, fabric texture, color temperature, and optional background (studio gradient, soft fabric, subtle texture wall) when it supports the SKU.",
+    "Motif-aware examples (guidance, not limits): dragon/skull/heavy gothic pendants → open-collar shirt, henley, leather collar hint, or dark knit — **avoid** default crew tee; floral/poetic → soft linen/earth tones; minimal geometric → crisp white/black architectural tops.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -928,53 +1087,13 @@ export function buildPendantOnModelFramingAndWardrobeBlock(
   ].join("\n");
 }
 
-function buildPendantOnModelWardrobeByStyleCue(
-  cue: PendantOnModelStyleCue,
-  wearGender?: "male" | "female" | null
-): string {
-  const isMale = wearGender === "male";
-  const isFemale = wearGender === "female";
-  const femaleOrAuto = isMale ? false : true;
-  if (cue === "gothic_dark") {
-    return femaleOrAuto
-      ? "Wardrobe match (gothic_dark, female/auto): black or charcoal deep V / square neck knit; minimal cool makeup; no chest prints."
-      : "Wardrobe match (gothic_dark, male): black crew or henley, dark gray layer; clean masculine silhouette.";
-  }
-  if (cue === "vintage_art") {
-    return femaleOrAuto
-      ? "Wardrobe match (vintage_art, female/auto): cream / ivory / beige vintage blouse or soft square neck; linen or velvet texture hint."
-      : "Wardrobe match (vintage_art, male): oatmeal knit or open-collar shirt; warm-neutral retro gentleman casual.";
-  }
-  if (cue === "minimal_modern") {
-    return femaleOrAuto
-      ? "Wardrobe match (minimal_modern, female/auto): white / black / gray solid top; no pattern; crisp neckline."
-      : "Wardrobe match (minimal_modern, male): solid tee or fine knit; no logo; minimal accessories.";
-  }
-  if (cue === "nature_poetic") {
-    return femaleOrAuto
-      ? "Wardrobe match (nature_poetic, female/auto): soft earth-tone cotton / linen round neck; light, not bohemian-layered."
-      : "Wardrobe match (nature_poetic, male): olive / sand simple top; relaxed natural posture.";
-  }
-  if (cue === "cyber_future") {
-    return femaleOrAuto
-      ? "Wardrobe match (cyber_future, female/auto): dark gray sleek top; cool-tone neckline friendly to metal highlights."
-      : "Wardrobe match (cyber_future, male): dark technical-fabric top; sharp lines; no sci-fi clutter.";
-  }
-  if (isFemale) {
-    return "Wardrobe match (street, female): clean white / gray / black tee or fine knit; Etsy everyday editorial.";
-  }
-  if (isMale) {
-    return "Wardrobe match (street, male): neutral contemporary tee / knit; unisex street-commercial.";
-  }
-  return "Wardrobe match (street, auto — female-biased): clean white / gray / black tee or fine knit; everyday Etsy necklace editorial.";
-}
-
 /**
  * Step2 吊坠/项链穿戴图：模特人种池（白人+拉丁/地中海为主）与款式匹配服装
  */
 export function buildPendantOnModelCastingAndWardrobeBlock(
   prompt: string,
-  wearGender?: "male" | "female" | null
+  wearGender?: "male" | "female" | null,
+  varietySeed = ""
 ): string {
   const cue = inferPendantOnModelStyleCue(prompt);
   const castingPool = [
@@ -984,6 +1103,7 @@ export function buildPendantOnModelCastingAndWardrobeBlock(
     "Latino / Mediterranean read: warm olive, wheat, or light-brown Southern European / Hispanic skin; natural neck/shoulder lines — includes Mediterranean and Latin American casting, not East Asian or South Asian default.",
     "Occasional (~10%): other ethnic presentations are allowed only when the **user prompt explicitly** requests a specific cultural motif or when the SKU narrative clearly demands it — never as the silent default.",
     "Face de-emphasized: prefer chin-to-upper-chest crop; pendant + chain remain the product hero.",
+    `Inferred pendant style cue for wardrobe rotation: **${cue}** (from user brief + motif keywords; init image SKU may override mood).`,
   ].join("\n");
 
   const genderCasting =
@@ -1002,8 +1122,8 @@ export function buildPendantOnModelCastingAndWardrobeBlock(
 
   const wardrobeCommon = [
     "WARDROBE–PENDANT STYLE MATCH (strict): outfit MUST support the inferred pendant style; neckline MUST expose clavicles and full chain path.",
-    buildPendantOnModelWardrobeByStyleCue(cue, wearGender),
-    "FORBID: turtleneck, scarf, heavy chest layering, large logos/prints, competing necklaces, or wardrobe louder than the pendant.",
+    buildPendantOnModelWardrobeByStyleCue(cue, wearGender, varietySeed),
+    "FORBID: turtleneck, scarf, heavy chest layering, large logos/prints, competing necklaces, plain **default charcoal crew-neck tee on every male SKU**, or wardrobe louder than the pendant.",
     "SAFETY: no nipple exposure, no explicit sexual posing, no fetish framing.",
   ].join("\n");
 
@@ -1033,7 +1153,7 @@ export function buildPendantOnModelStyleAdaptiveBlock(
     return [
       common,
       genderLine(wearGender),
-      "Style cue = gothic_dark: choose an edgy model vibe (cool expression, darker wardrobe such as charcoal/black, subtle dramatic contrast), while keeping skin and jewelry realistic.",
+      "Style cue = gothic_dark: edgy model vibe matched to **this** SKU (init motif + brief) — wardrobe from rotated variant list; **do not** default every gothic pendant to the same charcoal crew-neck tee.",
       "Tattoo allowance (occasional, sparse): optionally include at most one small subtle tattoo element near neck/collarbone/wrist area; never dense sleeves or large high-contrast tattoo blocks.",
       "Avoid heavy props/makeup blocking pendant visibility; keep visual mood dark-clean, not horror cosplay.",
     ].join("\n");
