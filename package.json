@@ -1,7 +1,7 @@
 {
   "name": "gemmuse",
-  "version": "3.0.1",
-  "description": "点燃您的奇思妙想！ v3.0.1",
+  "version": "3.0.2",
+  "description": "点燃您的奇思妙想！ v3.0.2",
   "author": "Ryan 丁",
   "private": true,
   "main": "dist-desktop/main.js",

@@ -18,6 +18,7 @@ import {
 import {
   buildPendantOnModelCastingAndWardrobeBlock,
   buildPendantOnModelCreativeVarietyBlock,
+  buildPendantBailTopologyLockBlock,
   buildPendantOnModelFramingAndWardrobeBlock,
   buildPendantOnModelScaleAndChainBlock,
   buildPendantOnModelStyleAdaptiveBlock,
@@ -133,26 +134,6 @@ function step3InputImageSovereigntyOnModelBlock(): string {
     "COUNT LOCK (strict): The output must still depict exactly ONE jewelry body ? the same single piece as the input. Never expand into multiple rings side-by-side, a trio lineup, or extra duplicate rings/pendants in frame.",
     buildSingleJewelryPieceOnlyConstraintBlock(),
   ].join("\n\n");
-}
-
-/** ???????????????? ????? */
-function step3PendantBailTopologyLockBlock(onModel: boolean): string {
-  const shared = [
-    "PENDANT ? BAIL / TOP CONNECTOR (strict, all Step3 product angles):",
-    "The init image defines a **bail** (or jump ring / top hanger) attached above the motif. This is **mandatory manufacturing geometry**, not an optional flourish.",
-    "Left/right/rear/front table shots: you **must still render that bail as solid metal** ? seen from the side, three-quarter, or back as appropriate. A partially hidden bail behind the head is OK; **a completely missing bail, bail absorbed into the outer filigree halo, or a sealed decorative disk with no through-opening** is NOT OK.",
-    "Keep the **same attachment junction and similar loop scale** as the source; do not delete the top loop to simplify a lying-on-side silhouette.",
-  ];
-  if (onModel) {
-    return [
-      ...shared,
-      "ON-MODEL CHAIN (strict): **Render** a believable necklace **chain or cord** with natural drape and readable links (or a smooth leather cord if the brief implies it). The init may show **no chain pixels** ? infer a **matching metal chain** consistent with the pendant. Bail / jump ring stays solid and attached ? **FORBID** a bail **floating** with broken attachment to the topper; **FORBID** a slack collapsed bail that reads like a broken CAD hinge.",
-    ].join("\n");
-  }
-  return [
-    ...shared,
-    "NO VISIBLE CHAIN ? CAD UPRIGHT BAIL (table / product shots): if the init shows **no necklace chain**, render the bail / jump ring **upright / plumb** along the stringing axis **as if tensioned from above** by a chain that is **implied only** ? **never draw chain links or cord**. **FORBID** a **slack / draped** bail collapsed on the motif like gravity-loose dead weight. **FORBID** a bail **floating** with broken attachment to the topper.",
-  ].join("\n");
 }
 
 /** ????????????????????????? */
@@ -588,7 +569,7 @@ export async function POST(req: Request) {
       ].join("\n");
     };
 
-    const pendantBailLock = kind === "pendant" ? step3PendantBailTopologyLockBlock(false) : "";
+    const pendantBailLock = kind === "pendant" ? buildPendantBailTopologyLockBlock(false) : "";
 
     const ringLeftRightViewFullBlock =
       kind === "ring"
@@ -651,7 +632,7 @@ export async function POST(req: Request) {
               step3InputImageSovereigntyOnModelBlock(),
               baseKeepInstructionOnModel,
               ...(wearGender ? [buildWearGenderPresentationBlock(wearGender, kind)] : []),
-              step3PendantBailTopologyLockBlock(true),
+              buildPendantBailTopologyLockBlock(true),
               buildPendantOnModelScaleAndChainBlock(),
               buildPendantOnModelFramingAndWardrobeBlock(wearGender),
               buildPendantOnModelCreativeVarietyBlock(prompt, wearGender, runNonce),
@@ -726,7 +707,7 @@ export async function POST(req: Request) {
               step3InputImageSovereigntyOnModelBlock(),
               baseKeepInstructionOnModel,
               buildStep3MandatoryCameraOrbitBlock("handheld", kind),
-              step3PendantBailTopologyLockBlock(true),
+              buildPendantBailTopologyLockBlock(true),
               buildStep3HandheldShotBlock(kind),
               buildHandheldHandGenderBlock(handGender),
               buildPendantHandheldVariantBlock(pendantHandheldVariant, runNonce),

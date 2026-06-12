@@ -1037,6 +1037,65 @@ export function buildPendantOnModelCreativeVarietyBlock(
 }
 
 /**
+ * Step3 吊坠 bail 拓扑：单顶 bail vs 双 bail（水平横条 / 上角双挂环）— 产品图与佩戴图均适用。
+ */
+export function buildPendantBailTopologyLockBlock(onModel: boolean): string {
+  const classify = [
+    "PENDANT BAIL TOPOLOGY — READ FROM INIT (strict, classify before drawing chain):",
+    "Inspect the init pendant SKU and choose **exactly one** mode:",
+    "",
+    "**MODE A — SINGLE-TOP-BAIL (default):** exactly **one** functional bail / jump ring / top hanger **above** the motif (top-center or single apex). The SKU does **not** have **two separate** left-side **and** right-side connector rings that both receive chain ends.",
+    "",
+    "**MODE B — DUAL-BAIL (two chain attachment points):** **two** functional bails / jump rings on the **left AND right** of the motif — chain connects to **both**, never through a single center top loop. Includes:",
+    "  • **B1 — horizontal-bar / end-mount:** rings at the **far left tip AND far right tip** of a horizontal motif (branch, bar, spread plaque — e.g. cherry-blossom twig).",
+    "  • **B2 — upper-corner / shoulder-mount:** rings at the **upper-left AND upper-right** corners or shoulders of a triangular, fan, or drop silhouette (e.g. Art Nouveau filigree with moons at top — **center-top ornament is decorative only**, not the chain path).",
+    "The pendant body **spans between** the two connectors; wearing topology is **not** a single center drop.",
+    "",
+    "If uncertain: count **functional** connector rings — **two left+right attachment points = MODE B**; **one top stringing point = MODE A**. Decorative center-top filigree without a through-ring stays MODE B when left+right bails exist.",
+  ].join("\n");
+
+  const modeAOnModel = [
+    "MODE A — ON-MODEL CHAIN (single top bail):",
+    "Render **one** continuous necklace chain (or cord) through / attached to the **single top bail** only.",
+    "Pendant hangs **vertically** from that one point; natural **V-drape** on the neck; bail / jump ring stays solid and attached.",
+    "**FORBID** a bail floating with broken attachment; **FORBID** a slack collapsed bail that reads like a broken CAD hinge.",
+  ].join("\n");
+
+  const modeBOnModel = [
+    "MODE B — ON-MODEL CHAIN (dual bail — strict, target wearing read):",
+    "The necklace has **two separate chain paths** from the neck — each path terminates at **one** SKU bail only (left path → left bail; right path → right bail). This is the correct dual-bail wearing effect.",
+    "**B1 horizontal-bar:** left path → **left-end** bail; right path → **right-end** bail. Pendant reads **horizontal** on chest; chain must **NOT** pass through the **middle** of the bar/branch.",
+    "**B2 upper-corner:** left path → **upper-left** bail; right path → **upper-right** bail. Pendant may hang **vertically / triangular** on chest but is **anchored at both upper corners** — chain forms a clear **inverted-V / split-Y** where it meets the piece; **center-top decoration does NOT receive the chain**.",
+    "Shared wearing cues (both B1 and B2): pendant sits **flat and stable** on the chest (two-point anchor, no sliding along a single loop); both lateral bails **visible or partially readable**; fine link chain matching init when visible; natural short-necklace drape from clavicle zone.",
+    "**FORBID:** converting dual-bail SKU into one top-center bail drop; **FORBID** one continuous loop threaded through center of bar **or** through center-top ornament; **FORBID** hiding or merging either bail; **FORBID** only one side connected with the other bail missing.",
+  ].join("\n");
+
+  const modeAProduct = [
+    "MODE A — PRODUCT / TABLE (no wearing):",
+    "Single top bail / jump ring must remain **solid metal** with open through-path — seen from side / 3/4 / rear as appropriate.",
+    "If init shows **no** necklace chain: bail **upright / plumb** as if tensioned from above — chain **implied only**, **never draw** chain links through bail or from top edge.",
+    "**FORBID** slack collapsed bail on motif; **FORBID** bail absorbed into filigree halo or sealed shut with no stringing opening.",
+  ].join("\n");
+
+  const modeBProduct = [
+    "MODE B — PRODUCT / TABLE (dual bail):",
+    "Both **left and right** attachment bails / jump rings must remain **solid, separate, and readable** — same count, placement, and scale as init (end-mount **or** upper-corner mount).",
+    "If init shows chain at **both** attachment points: preserve **dual-end / dual-corner** connections; chain does **not** thread through the motif center or center-top decoration.",
+    "If init shows **no** chain (CAD / flat hero): show **both** connectors clearly; do **not** delete one side; do **not** merge into one top bail.",
+  ].join("\n");
+
+  const sharedLock = [
+    "SHARED HARDWARE LOCK: every bail / jump ring in the init is **mandatory manufacturing geometry** — never remove, seal shut, merge into decorative rim, or replace with flat filigree so the connector path disappears.",
+    "Keep the **same attachment junction count, placement, and similar loop scale** as the source.",
+  ].join("\n");
+
+  if (onModel) {
+    return [classify, modeAOnModel, modeBOnModel, sharedLock].join("\n\n");
+  }
+  return [classify, modeAProduct, modeBProduct, sharedLock].join("\n\n");
+}
+
+/**
  * Step2 吊坠/项链穿戴图：固定比例与链条规格约束（用户给定标尺）
  */
 export function buildPendantOnModelScaleAndChainBlock(): string {
@@ -1044,11 +1103,12 @@ export function buildPendantOnModelScaleAndChainBlock(): string {
     "PENDANT ON-MODEL SCALE + CHAIN SPEC (strict):",
     "Treat the pendant body as a real wearable small piece: target physical height around **2.5 cm** (about 24–27 mm including bail if visible). This is a hard real-world size lock.",
     "Scale correction priority (critical): compared with common over-close outputs, the pendant must read about **1/3 of that oversized visual volume**; keep it clearly visible but much smaller in frame.",
-    "Render a **thin silver twisted-rope chain** (fine helix rope texture), not a thick curb/cable chain and not a leather cord.",
+    "CHAIN TYPE: default **thin silver twisted-rope chain** (fine helix texture) for **MODE A single-top-bail** pendants — not thick curb/cable, not leather cord.",
+    "CHAIN TYPE (MODE B dual-bail): follow **init chain read** (often fine **link chain** to left and right attachment points); still fine and proportional — dual-path topology per bail block, **not** one strand through center.",
     "Real-world proportion lock: pendant should read as a compact chest pendant — roughly thumb-nail to first-finger-segment scale in a neck/collarbone composition, never an oversized talisman filling most of the chest area.",
-    "Length/read lock: chain behaves like a normal short necklace drop with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
+    "Length/read lock: chain behaves like a normal short necklace with natural gravity; pendant sits around upper chest / near collarbone zone, with believable drape tension.",
     "Frame occupancy lock: pendant + bail should usually occupy only about **8%–14% of the full image area** in on-model shots (never dominant center-macro occupancy).",
-    "FORBID scale failures: giant pendant hero (4–6+ cm visual read), zoomed-in framing that makes pendant appear unrealistically huge, toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine silver rope chain.",
+    "FORBID scale failures: giant pendant hero (4–6+ cm visual read), zoomed-in framing that makes pendant appear unrealistically huge, toy-mini pendant that is barely visible, extra-thick statement chain overpowering the pendant, or chain gauge inconsistent with a fine chain.",
   ].join("\n");
 }
 
